@@ -202,6 +202,13 @@ class Game:
                 code="invalid_action",
             )
         index = self._checked_index(row, col)
+        self._check_can_play(expected_revision)
+        changed = handler(self, index)
+        if changed:
+            self.revision += 1
+        return changed
+
+    def _check_can_play(self, expected_revision: Any) -> None:
         if not _is_int(expected_revision) or expected_revision < 0:
             raise InvalidActionError(
                 "revision must be a non-negative whole number.", code="invalid_revision"
@@ -213,7 +220,36 @@ class Game:
             raise GameOverError(
                 f"This game is already over (you {outcome}). Start a new game to keep playing."
             )
-        changed = handler(self, index)
+
+    def apply_deductions(
+        self, proven_safe: List[int], proven_mines: List[int], expected_revision: Any
+    ) -> bool:
+        """Apply one solver-proven batch, with one revision for the whole batch."""
+        self._check_can_play(expected_revision)
+        if self.status == STATUS_READY:
+            raise InvalidActionError(
+                "Reveal your first cell before using autosolve.", code="game_not_started"
+            )
+        for indices in (proven_safe, proven_mines):
+            if any(not _is_int(i) or not 0 <= i < self.size for i in indices):
+                raise InvalidActionError("Invalid deduction cell index.", code="invalid_deductions")
+        safe, mines = set(proven_safe), set(proven_mines)
+        if safe & mines or any(self._revealed[i] for i in safe | mines):
+            raise InvalidActionError(
+                "Deductions must describe distinct hidden cells.", code="invalid_deductions"
+            )
+        changed = False
+        for index in sorted(mines):
+            if not self._flagged[index]:
+                changed = self._toggle_flag(index) or changed
+        # Clear every proven-safe flag before flooding so no safe region stays blocked.
+        for index in sorted(safe):
+            if self._flagged[index]:
+                changed = self._toggle_flag(index) or changed
+        for index in sorted(safe):
+            if self.is_over:
+                break
+            changed = self._reveal(index) or changed
         if changed:
             self.revision += 1
         return changed
@@ -447,6 +483,19 @@ class GameEntry:
         with self._lock:
             try:
                 changed = self._game.apply_action(action, row, col, expected_revision)
+            except (StaleRevisionError, GameOverError) as exc:
+                exc.state = self._game.public_state()
+                raise
+            if changed:
+                self._probability_cache = None
+            return self._game.public_state()
+
+    def apply_deductions(
+        self, proven_safe: List[int], proven_mines: List[int], expected_revision: int
+    ) -> Dict[str, Any]:
+        with self._lock:
+            try:
+                changed = self._game.apply_deductions(proven_safe, proven_mines, expected_revision)
             except (StaleRevisionError, GameOverError) as exc:
                 exc.state = self._game.public_state()
                 raise

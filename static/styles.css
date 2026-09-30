@@ -631,6 +631,16 @@ kbd {
   gap: 10px;
 }
 
+.autosolve-status {
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  border-left: 3px solid var(--teal-2);
+  border-radius: 4px;
+  background: rgba(20, 184, 166, 0.08);
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+
 .segmented {
   display: inline-flex;
   padding: 3px;

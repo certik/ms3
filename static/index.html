@@ -218,6 +218,10 @@
             <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
             <span class="switch-label">Mine odds</span>
           </button>
+          <button type="button" class="switch" id="autosolve-toggle" role="switch" aria-checked="false" aria-describedby="autosolve-status">
+            <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+            <span class="switch-label">Autosolve</span>
+          </button>
           <div class="zoom" role="group" aria-label="Cell size">
             <button type="button" class="icon-btn" id="zoom-out" aria-label="Smaller cells" title="Smaller cells">
               <svg class="icon" aria-hidden="true"><use href="#i-zoom-out"></use></svg>
@@ -230,6 +234,7 @@
         </div>
       </div>
 
+      <p class="autosolve-status" id="autosolve-status" role="status" hidden></p>
       <div class="notice-region" id="notice-region" aria-live="polite"></div>
 
       <div class="result" id="result" hidden>
@@ -314,6 +319,7 @@
       <section class="panel howto" aria-labelledby="howto-heading">
         <h2 id="howto-heading">How to play</h2>
         <p class="howto-lead">Open every cell that is not a mine. A number tells you how many of its 8 neighbors hide mines.</p>
+        <p><strong>Autosolve</strong> flags proven mines and opens proven-safe cells until a guess is needed. Choose your first cell, then pick among the remaining odds whenever it pauses. If you survive, autosolve continues. It never guesses or trusts sampled 0% / 100% estimates.</p>
         <ul class="controls-list">
           <li>
             <span class="keys"><kbd>Click</kbd> <kbd>Enter</kbd> <kbd>Space</kbd></span>

@@ -131,6 +131,30 @@ is always printed on the cell as well, so color is never the only cue.
 cell is just another hidden cell and gets its own odds. If you have flagged a
 cell that is proven safe, the panel points this out.
 
+## Autosolve
+
+Turn on **Autosolve** to keep the odds visible and automatically play every
+certain move. Make the first reveal yourself. The server then flags proven
+mines, removes any flags on proven-safe cells, and opens those safe cells,
+including their normal zero-cell flood fill. It recalculates and repeats until
+no more certain moves remain, or the game ends.
+
+The remaining uncertain cells keep their percentages. Choose one yourself;
+if you survive, autosolve resumes automatically. It **never guesses** and
+never treats a sampled 0% or 100% estimate as a proof. Even when full odds are
+unavailable, logically proven moves can still be played.
+
+Switch Autosolve off to pause; an already-sent safe-move batch may finish, but
+no next batch is started. Turning Mine odds off also turns Autosolve off.
+Autosolve is remembered across reloads and new games, which still wait for
+your first reveal. A failed automatic move pauses the mode rather than retrying
+blindly; the usual authoritative reload handles an uncertain request outcome.
+
+Each automatic pass is one server-verified batch and increments the revision
+once if anything changes. This avoids sending one full-board response for
+every automatic flag or reveal on a large grid. Proofs computed for an old
+revision are rejected, and the browser never applies old odds to a new board.
+
 ## How the odds are computed
 
 The solver (`minesweeper/probability.py`) sees only public information: the
@@ -243,6 +267,7 @@ are listed in row-major order: index = `row x width + col`.
 | `POST /api/games` | `{"width", "height", "mines"}` | `201` with a GameState |
 | `GET /api/games/{id}` | | `200` with a GameState |
 | `POST /api/games/{id}/actions` | `{"action": "reveal" or "flag" or "chord", "row", "col", "revision"}` | `200` with the new GameState |
+| `POST /api/games/{id}/autosolve` | `{"revision": N}` | `200` with GameState after one batch of server-proven flags and safe reveals; no guesses |
 | `GET /api/games/{id}/probabilities?revision=N` | | `200` with a probability object |
 
 **GameState** is

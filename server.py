@@ -59,6 +59,7 @@ STATIC_CACHE_CONTROL = "no-cache"
 
 CREATE_FIELDS = ("width", "height", "mines")
 ACTION_FIELDS = ("action", "row", "col", "revision")
+AUTOSOLVE_FIELDS = ("revision",)
 
 SOLVER_TIME_BUDGET = 1.5
 SOLVER_NODE_BUDGET = 100_000
@@ -66,7 +67,7 @@ SOLVER_SAMPLE_BUDGET = 2_000
 MAX_CONCURRENT_SOLVES = 2
 SOLVER_WAIT_TIMEOUT = 10.0
 
-_GAME_ROUTE = re.compile(r"/api/games/([^/]+)(?:/(actions|probabilities))?")
+_GAME_ROUTE = re.compile(r"/api/games/([^/]+)(?:/(actions|probabilities|autosolve))?")
 _REVISION_TEXT = re.compile(r"0|[1-9][0-9]{0,15}")
 _CONTENT_LENGTH_TEXT = re.compile(r"[0-9]{1,18}")
 _SOLVER_STATUSES = frozenset({"exact", "approximate", "unavailable"})
@@ -555,6 +556,20 @@ class MinesweeperRequestHandler(BaseHTTPRequestHandler):
             payload = self._read_json_object()
             _require_fields(payload, ACTION_FIELDS)
             state = entry.act(payload["action"], payload["row"], payload["col"], payload["revision"])
+            self._send_json(200, state)
+        elif resource == "autosolve":
+            self._allow(method, "POST")
+            _reject_query(query)
+            entry = self.server.store.get(game_id)
+            payload = self._read_json_object()
+            _require_fields(payload, AUTOSOLVE_FIELDS)
+            revision = payload["revision"]
+            if not _is_int(revision) or revision < 0:
+                raise ApiError(400, "invalid_revision", "revision must be a non-negative whole number.")
+            odds = self.server.probabilities.probabilities(entry, revision)
+            # Recheck the revision under the game lock: a move may have happened
+            # while solving. Only proofs are actionable, never sampled endpoints.
+            state = entry.apply_deductions(odds["proven_safe"], odds["proven_mines"], revision)
             self._send_json(200, state)
         else:
             self._allow(method, "GET", "HEAD")

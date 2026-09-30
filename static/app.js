@@ -88,6 +88,7 @@
     reconnectTimer: 0,
     reconnectDelay: 2000,
     fitFrame: 0,
+    autosolve: { enabled: false, timer: 0, attemptedKey: null },
     odds: {
       enabled: false,
       gen: 0, // bumped whenever an in-flight request becomes obsolete
@@ -285,13 +286,15 @@
     if (isInt(prefs.zoom) && prefs.zoom >= 0 && prefs.zoom < ZOOM_STEPS.length) {
       app.zoom = { mode: 'manual', index: prefs.zoom };
     }
-    app.odds.enabled = prefs.odds === true;
+    app.autosolve.enabled = prefs.autosolve === true;
+    app.odds.enabled = prefs.odds === true || app.autosolve.enabled;
   }
 
   function savePrefs() {
     store.setJSON(STORAGE_KEYS.prefs, {
       zoom: app.zoom.mode === 'auto' ? 'auto' : app.zoom.index,
-      odds: app.odds.enabled
+      odds: app.odds.enabled,
+      autosolve: app.autosolve.enabled
     });
   }
 
@@ -938,8 +941,9 @@
 
   async function sendAction(action, index) {
     const game = app.game;
-    const pending = { controller: new AbortController(), gameId: game.id };
-    const body = {
+    const automatic = action === 'autosolve';
+    const pending = { controller: new AbortController(), gameId: game.id, action: action };
+    const body = automatic ? { revision: game.revision } : {
       action: action,
       row: Math.floor(index / game.width),
       col: index % game.width,
@@ -953,7 +957,7 @@
     let data = null;
     let error = null;
     try {
-      data = await api('POST', gameUrl(game.id) + '/actions', {
+      data = await api('POST', gameUrl(game.id) + (automatic ? '/autosolve' : '/actions'), {
         body: body,
         signal: pending.controller.signal,
         timeout: TIMEOUTS.action
@@ -977,6 +981,7 @@
     }
     if (error) {
       handleActionError(error, action);
+      if (automatic) setAutosolveEnabled(false);
       render();
       syncOdds();
       return;
@@ -987,6 +992,7 @@
   }
 
   function actionNoun(action) {
+    if (action === 'autosolve') return 'automatic move batch';
     if (action === 'flag') return 'flag change';
     if (action === 'chord') return 'chord';
     return 'reveal';
@@ -1069,6 +1075,11 @@
       return;
     }
     const opened = after.revealedCount - before.revealedCount;
+    if (action === 'autosolve') {
+      if (opened > 0) announce('Autosolve opened ' + plural(opened, 'cell') + ' and updated the flags.');
+      else if (after.flags > before.flags) announce('Autosolve marked ' + plural(after.flags - before.flags, 'proven mine') + '.');
+      return;
+    }
     if (opened <= 0) {
       announce('No cells were opened.');
     } else if (opened === 1 && action === 'reveal') {
@@ -1153,6 +1164,7 @@
       app.syncing = false;
       // A move became uncertain while this reload was in flight: reload again.
       if (app.needsResync && seq !== app.uncertainSeq && app.connection !== 'offline') resync({ quiet: true });
+      else syncAutosolve();
     }
   }
 
@@ -1256,6 +1268,91 @@
 
   // ---------------------------------------------------------------------- odds
 
+  function cancelAutosolve() {
+    clearTimeout(app.autosolve.timer);
+    app.autosolve.timer = 0;
+  }
+
+  function hasAutomaticMoves(game, data) {
+    for (const index of data.safe) {
+      if (!game.cells[index].revealed) return true;
+    }
+    for (const index of data.mines) {
+      if (!game.cells[index].revealed && !game.cells[index].flagged) return true;
+    }
+    return false;
+  }
+
+  function syncAutosolve() {
+    renderAutosolve();
+    const auto = app.autosolve;
+    const game = app.game;
+    const data = currentOdds();
+    if (!auto.enabled || auto.timer || !data || isBusy() || app.syncing ||
+        app.needsResync || !hasAutomaticMoves(game, data)) return;
+    const key = oddsKey(game);
+    if (auto.attemptedKey === key) return;
+    auto.timer = setTimeout(function () {
+      auto.timer = 0;
+      const latest = currentOdds();
+      if (!auto.enabled || !latest || oddsKey(app.game) !== key || isBusy() ||
+          app.syncing || app.needsResync || !hasAutomaticMoves(app.game, latest)) return;
+      // A no-op or failed batch must not become a same-revision request loop.
+      auto.attemptedKey = key;
+      sendAction('autosolve');
+    }, 0);
+  }
+
+  function setAutosolveEnabled(on) {
+    if (app.autosolve.enabled === on) return;
+    app.autosolve.enabled = on;
+    app.autosolve.attemptedKey = null;
+    cancelAutosolve();
+    if (on) {
+      app.odds.enabled = true;
+      app.odds.error = null;
+      app.odds.discardedKey = null;
+    }
+    savePrefs();
+    render();
+    syncOdds();
+    announce(on ? 'Autosolve on. Only proven moves are played; you choose every uncertain cell.'
+      : 'Autosolve paused. Any safe-move batch already sent will finish.');
+  }
+
+  function renderAutosolve() {
+    const auto = app.autosolve;
+    const game = app.game;
+    const running = app.pendingAction && app.pendingAction.action === 'autosolve';
+    el.autosolveToggle.setAttribute('aria-checked', auto.enabled ? 'true' : 'false');
+    el.autosolveStatus.hidden = !auto.enabled && !running;
+    let text = '';
+    if (!auto.enabled && running) {
+      text = 'Pausing autosolve; the safe-move batch already sent is finishing.';
+    } else if (auto.enabled) {
+      const data = currentOdds();
+      if (!game || app.pendingCreate) text = 'Autosolve is waiting for the board.';
+      else if (game.status === 'ready') text = 'Choose your first cell. Autosolve will then play only certain moves.';
+      else if (isTerminal(game)) text = 'Game over. Autosolve never chooses uncertain cells.';
+      else if (app.gameGone || app.needsResync || app.syncing) text = 'Autosolve is waiting for the board to be reloaded.';
+      else if (isBusy()) text = 'Autosolve is opening proven-safe cells and updating flags...';
+      else if (!data) {
+        text = oddsPhase() === 'error' || oddsPhase() === 'discarded'
+          ? 'Autosolve is waiting for valid odds. Retry odds or keep playing.'
+          : 'Autosolve is calculating the next certain moves...';
+      } else if (hasAutomaticMoves(game, data)) {
+        text = auto.attemptedKey === oddsKey(game)
+          ? 'No automatic moves were applied. Toggle Autosolve off and on to retry.'
+          : 'Autosolve is opening proven-safe cells and flagging proven mines...';
+      } else {
+        text = data.status === 'unavailable'
+          ? 'No more proven moves. Some odds are unavailable; retry odds or choose your next cell.'
+          : 'Your move: choose a cell using its mine odds. If you survive, autosolve continues.';
+      }
+    }
+    setText(el.autosolveStatus, text);
+  }
+
   const PROVEN_SAFE = { kind: 'safe', label: 'proven safe', text: 'proven safe' };
   const PROVEN_MINE = { kind: 'mine', label: 'proven mine', text: 'proven mine' };
   const UNKNOWN_ODDS = { kind: 'unknown', label: 'mine chance unavailable', text: 'odds unavailable' };
@@ -1328,6 +1425,7 @@
   }
 
   function cancelOddsRequest() {
+    cancelAutosolve();
     const o = app.odds;
     o.gen++; // late answers from the old request are ignored even if abort was too late
     if (o.controller) {
@@ -1350,6 +1448,7 @@
 
   function resetOdds() {
     clearOddsView();
+    app.autosolve.attemptedKey = null;
     app.odds.cache = null;
     app.odds.error = null;
     app.odds.discardedKey = null;
@@ -1366,7 +1465,10 @@
       return;
     }
     const key = oddsKey(game);
-    if (o.data && o.dataKey === key) return;
+    if (o.data && o.dataKey === key) {
+      syncAutosolve();
+      return;
+    }
     if (o.cache && o.cache.key === key) {
       o.data = o.cache.data;
       o.dataKey = key;
@@ -1374,6 +1476,7 @@
       renderOddsPanel();
       renderInspector();
       announceOddsIfNeeded();
+      syncAutosolve();
       return;
     }
     if (o.requestKey === key) return;
@@ -1475,6 +1578,7 @@
     renderOddsPanel();
     renderInspector();
     announceOddsIfNeeded();
+    syncAutosolve();
   }
 
   function oddsErrorText(err) {
@@ -1523,12 +1627,13 @@
     o.enabled = on;
     o.error = null;
     o.discardedKey = null;
+    if (!on) app.autosolve.enabled = false;
     savePrefs();
     if (!on) {
       clearOddsView();
       o.announceNext = false;
       render();
-      announce('Mine odds hidden.');
+      announce('Mine odds hidden. Autosolve is off.');
       return;
     }
     o.announceNext = true;
@@ -1549,6 +1654,8 @@
   function retryOdds() {
     const o = app.odds;
     const game = app.game;
+    cancelAutosolve();
+    app.autosolve.attemptedKey = null;
     o.error = null;
     o.discardedKey = null;
     if (game && o.data && o.data.status === 'unavailable') {
@@ -2068,6 +2175,7 @@
     el.oddsDetail.hidden = !detail;
     renderMetaChips(chips);
     el.oddsRetry.hidden = !retry;
+    renderAutosolve();
   }
 
   // ---------------------------------------------------------- focus and zoom
@@ -2489,6 +2597,7 @@
       'board', 'board-frame', 'board-scroller', 'board-empty', 'board-empty-spinner', 'board-empty-icon',
       'board-empty-title', 'board-empty-text', 'board-empty-retry', 'busy-pill', 'inspector', 'game-meta',
       'notice-region', 'result', 'result-icon', 'result-title', 'result-detail', 'result-again', 'mines-left',
+      'autosolve-toggle', 'autosolve-status',
       'mines-counter', 'mines-label', 'timer', 'face', 'face-use', 'mode-reveal', 'mode-flag', 'odds-toggle',
       'zoom-out', 'zoom-in', 'zoom-fit', 'new-game', 'custom-toggle', 'custom-form', 'custom-width',
       'custom-height', 'custom-mines', 'custom-width-error', 'custom-height-error', 'custom-mines-error',
@@ -2526,6 +2635,7 @@
     el.modeReveal.addEventListener('click', function () { setFlagMode(false); });
     el.modeFlag.addEventListener('click', function () { setFlagMode(true); });
     el.oddsToggle.addEventListener('click', function () { setOddsEnabled(!app.odds.enabled); });
+    el.autosolveToggle.addEventListener('click', function () { setAutosolveEnabled(!app.autosolve.enabled); });
     el.oddsRetry.addEventListener('click', function () {
       retryOdds();
       if (el.oddsRetry.hidden) el.oddsToggle.focus();
