@@ -1,0 +1,27 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Coverage output
+.coverage
+.coverage.*
+htmlcov/
+
+# Local virtual environments and settings
+.venv/
+venv/
+env/
+.env
+
+# Editor and OS artifacts
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Logs and scratch space
+*.log
+.scratch/

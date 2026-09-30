@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0a1020">
+  <meta name="description" content="Minesweeper in the browser with an optional mine-odds overlay: exact when the position allows it, clearly marked estimates otherwise.">
+  <title>Minesweeper</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23134e4a'/%3E%3Cg stroke='%23ccfbf1' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M16 6v20M6 16h20M9.5 9.5l13 13M22.5 9.5l-13 13'/%3E%3C/g%3E%3Ccircle cx='16' cy='16' r='6.5' fill='%23ccfbf1'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="i-flag" viewBox="0 0 24 24">
+        <rect x="6.3" y="3.2" width="1.9" height="15.2" rx="0.95" style="fill:var(--flag-pole,#dbe4f0)"/>
+        <path d="M8.1 3.7 18.9 8.1 8.1 12.5Z" style="fill:var(--flag-cloth,#fbbf24);stroke:var(--flag-edge,rgba(15,23,42,0.45))" stroke-width="0.9" stroke-linejoin="round"/>
+        <path d="M3.6 20.6c0-1.3 1-2.3 2.3-2.3h4.7c1.3 0 2.3 1 2.3 2.3v0.3H3.6Z" style="fill:var(--flag-pole,#dbe4f0)"/>
+      </symbol>
+      <symbol id="i-flag-wrong" viewBox="0 0 24 24">
+        <g opacity="0.55">
+          <rect x="6.3" y="3.2" width="1.9" height="15.2" rx="0.95" style="fill:var(--flag-pole,#dbe4f0)"/>
+          <path d="M8.1 3.7 18.9 8.1 8.1 12.5Z" style="fill:var(--flag-cloth,#fbbf24)"/>
+          <path d="M3.6 20.6c0-1.3 1-2.3 2.3-2.3h4.7c1.3 0 2.3 1 2.3 2.3v0.3H3.6Z" style="fill:var(--flag-pole,#dbe4f0)"/>
+        </g>
+        <path d="M4.5 4.5 19.5 19.5M19.5 4.5 4.5 19.5" fill="none" style="stroke:var(--wrong-x,#f87171)" stroke-width="2.8" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="i-mine" viewBox="0 0 24 24">
+        <path d="M12 2.6v3.2M12 18.2v3.2M2.6 12h3.2M18.2 12h3.2M5.3 5.3l2.3 2.3M16.4 16.4l2.3 2.3M18.7 5.3l-2.3 2.3M7.6 16.4l-2.3 2.3" fill="none" style="stroke:var(--mine-body,#0b1120)" stroke-width="2.3" stroke-linecap="round"/>
+        <circle cx="12" cy="12" r="6.3" style="fill:var(--mine-body,#0b1120)"/>
+        <circle cx="9.8" cy="9.8" r="1.8" style="fill:var(--mine-shine,#f8fafc)" opacity="0.9"/>
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24">
+        <path d="M5 12.6 9.4 17 19 7.4" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="2"/>
+        <path d="M12 7.4V12l3.1 2.1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="i-restart" viewBox="0 0 24 24">
+        <path d="M19.4 12.6a7.5 7.5 0 1 1-2.3-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M19.6 3.6v4.8h-4.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="i-pointer" viewBox="0 0 24 24">
+        <path d="M6.2 3.4 18.6 12.1l-5.5 1.1 3.1 6-2.5 1.3-3.1-6.1-4.2 3.8Z" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="i-zoom-in" viewBox="0 0 24 24">
+        <circle cx="10.5" cy="10.5" r="6.2" fill="none" stroke="currentColor" stroke-width="2"/>
+        <path d="m15.2 15.2 4.9 4.9M7.9 10.5h5.2M10.5 7.9v5.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="i-zoom-out" viewBox="0 0 24 24">
+        <circle cx="10.5" cy="10.5" r="6.2" fill="none" stroke="currentColor" stroke-width="2"/>
+        <path d="m15.2 15.2 4.9 4.9M7.9 10.5h5.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24">
+        <path d="M12 3.6 2.9 19.6h18.2Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M12 9.4v4.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="12" cy="16.8" r="1.2" fill="currentColor"/>
+      </symbol>
+      <symbol id="i-info" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8.8" fill="none" stroke="currentColor" stroke-width="2"/>
+        <path d="M12 11v5.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="12" cy="7.8" r="1.2" fill="currentColor"/>
+      </symbol>
+      <symbol id="i-close" viewBox="0 0 24 24">
+        <path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="i-offline" viewBox="0 0 24 24">
+        <rect x="4" y="4.2" width="16" height="6.4" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <rect x="4" y="13.4" width="16" height="6.4" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M3.2 3.2 20.8 20.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="i-trophy" viewBox="0 0 24 24">
+        <path d="M7.2 3.8h9.6v4.8a4.8 4.8 0 0 1-9.6 0Z" fill="currentColor"/>
+        <path d="M7.2 5.4H4.6v1.3a3.4 3.4 0 0 0 3.3 3.4M16.8 5.4h2.6v1.3a3.4 3.4 0 0 1-3.3 3.4" fill="none" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M10.7 13.2h2.6v3.4h-2.6Z" fill="currentColor"/>
+        <path d="M7.8 20.4h8.4v-1.7a1.5 1.5 0 0 0-1.5-1.5H9.3a1.5 1.5 0 0 0-1.5 1.5Z" fill="currentColor"/>
+      </symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24">
+        <path d="M12 3 5 5.9v5.6c0 4.3 2.9 7.9 7 9.5 4.1-1.6 7-5.2 7-9.5V5.9Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="m8.8 12.1 2.3 2.3 4.3-4.6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="face-smile" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" style="fill:var(--face,#fbbf24)"/>
+        <circle cx="8.6" cy="9.7" r="1.4" fill="#231600"/>
+        <circle cx="15.4" cy="9.7" r="1.4" fill="#231600"/>
+        <path d="M7.7 14.1c1 1.8 2.5 2.7 4.3 2.7s3.3-0.9 4.3-2.7" fill="none" stroke="#231600" stroke-width="1.7" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="face-wow" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" style="fill:var(--face,#fbbf24)"/>
+        <circle cx="8.6" cy="9.4" r="1.7" fill="#231600"/>
+        <circle cx="15.4" cy="9.4" r="1.7" fill="#231600"/>
+        <ellipse cx="12" cy="15.6" rx="2.1" ry="2.5" fill="#231600"/>
+      </symbol>
+      <symbol id="face-cool" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" style="fill:var(--face,#fbbf24)"/>
+        <path d="M4.6 8.2h14.8M5.4 8.2l0.6 2.6a2.2 2.2 0 0 0 2.1 1.7h1.3a2.2 2.2 0 0 0 2.1-1.8l0.2-1.1 0.2 1.1a2.2 2.2 0 0 0 2.1 1.8h1.3a2.2 2.2 0 0 0 2.1-1.7l0.6-2.6" fill="#231600" stroke="#231600" stroke-width="1.3" stroke-linejoin="round"/>
+        <path d="M7.9 14.6c1 1.6 2.4 2.4 4.1 2.4s3.1-0.8 4.1-2.4" fill="none" stroke="#231600" stroke-width="1.7" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="face-dead" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" style="fill:var(--face,#fbbf24)"/>
+        <path d="M7.2 8.1l2.8 2.8M10 8.1l-2.8 2.8M14 8.1l2.8 2.8M16.8 8.1 14 10.9" fill="none" stroke="#231600" stroke-width="1.6" stroke-linecap="round"/>
+        <path d="M8 16.8c1-1.4 2.4-2.1 4-2.1s3 0.7 4 2.1" fill="none" stroke="#231600" stroke-width="1.7" stroke-linecap="round"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <a class="skip-link" id="skip-link" href="#board">Skip to the minefield</a>
+
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"><svg class="icon"><use href="#i-mine"></use></svg></span>
+      <div class="brand-text">
+        <h1>Minesweeper</h1>
+        <p>Exact and estimated mine odds</p>
+      </div>
+    </div>
+    <div class="connection" id="connection" data-state="connecting">
+      <span class="connection-dot" aria-hidden="true"></span>
+      <span id="connection-text">Connecting...</span>
+    </div>
+  </header>
+
+  <main class="layout" id="main">
+    <section class="game-card" aria-labelledby="game-heading">
+      <h2 id="game-heading" class="visually-hidden">Game</h2>
+
+      <div class="toolbar">
+        <div class="presets" role="group" aria-label="Difficulty">
+          <button type="button" class="preset" data-preset="beginner" aria-pressed="true">
+            <span class="preset-name">Beginner</span>
+            <span class="preset-dims">9x9, 10 mines</span>
+          </button>
+          <button type="button" class="preset" data-preset="intermediate" aria-pressed="false">
+            <span class="preset-name">Intermediate</span>
+            <span class="preset-dims">16x16, 40 mines</span>
+          </button>
+          <button type="button" class="preset" data-preset="expert" aria-pressed="false">
+            <span class="preset-name">Expert</span>
+            <span class="preset-dims">30x16, 99 mines</span>
+          </button>
+          <button type="button" class="preset" data-preset="large" aria-pressed="false">
+            <span class="preset-name">Large</span>
+            <span class="preset-dims">50x30, 225 mines</span>
+          </button>
+          <button type="button" class="preset" data-preset="custom" id="custom-toggle" aria-pressed="false" aria-expanded="false" aria-controls="custom-form">
+            <span class="preset-name">Custom</span>
+            <span class="preset-dims" id="custom-dims">Your size</span>
+          </button>
+        </div>
+        <button type="button" class="btn btn-primary new-game" id="new-game">
+          <svg class="icon" aria-hidden="true"><use href="#i-restart"></use></svg>
+          <span>New game</span>
+        </button>
+      </div>
+
+      <form class="custom-form" id="custom-form" hidden novalidate aria-labelledby="custom-heading">
+        <h3 id="custom-heading" class="visually-hidden">Custom board</h3>
+        <div class="field">
+          <label for="custom-width">Width</label>
+          <input id="custom-width" name="width" type="number" inputmode="numeric" min="5" max="80" step="1" required aria-describedby="custom-width-hint custom-width-error">
+          <span class="field-hint" id="custom-width-hint">5 to 80 columns</span>
+          <span class="field-error" id="custom-width-error"></span>
+        </div>
+        <div class="field">
+          <label for="custom-height">Height</label>
+          <input id="custom-height" name="height" type="number" inputmode="numeric" min="5" max="80" step="1" required aria-describedby="custom-height-hint custom-height-error">
+          <span class="field-hint" id="custom-height-hint">5 to 80 rows</span>
+          <span class="field-error" id="custom-height-error"></span>
+        </div>
+        <div class="field">
+          <label for="custom-mines">Mines</label>
+          <input id="custom-mines" name="mines" type="number" inputmode="numeric" min="1" step="1" required aria-describedby="custom-mines-hint custom-mines-error">
+          <span class="field-hint" id="custom-mines-hint">1 to area minus 9</span>
+          <span class="field-error" id="custom-mines-error"></span>
+        </div>
+        <div class="custom-actions">
+          <button type="submit" class="btn btn-accent" id="custom-start">Start custom game</button>
+        </div>
+        <p class="form-error" id="custom-form-error" role="alert"></p>
+      </form>
+
+      <div class="hud">
+        <div class="counters">
+          <div class="counter" id="mines-counter" title="Mines minus flags placed">
+            <svg class="icon counter-icon" aria-hidden="true"><use href="#i-mine"></use></svg>
+            <div class="counter-body">
+              <span class="counter-value" id="mines-left">--</span>
+              <span class="counter-label" id="mines-label">Mines left</span>
+            </div>
+          </div>
+          <button type="button" class="face" id="face" aria-label="New game" title="New game">
+            <svg class="face-icon" aria-hidden="true"><use id="face-use" href="#face-smile"></use></svg>
+          </button>
+          <div class="counter">
+            <svg class="icon counter-icon" aria-hidden="true"><use href="#i-clock"></use></svg>
+            <div class="counter-body">
+              <span class="counter-value" id="timer">0:00</span>
+              <span class="counter-label">Time</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="hud-controls">
+          <div class="segmented" role="group" aria-label="Click and tap action">
+            <button type="button" class="segment" id="mode-reveal" aria-pressed="true">
+              <svg class="icon" aria-hidden="true"><use href="#i-pointer"></use></svg>
+              <span>Reveal</span>
+            </button>
+            <button type="button" class="segment" id="mode-flag" aria-pressed="false">
+              <svg class="icon" aria-hidden="true"><use href="#i-flag"></use></svg>
+              <span>Flag</span>
+            </button>
+          </div>
+          <button type="button" class="switch" id="odds-toggle" role="switch" aria-checked="false" aria-describedby="odds-message">
+            <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+            <span class="switch-label">Mine odds</span>
+          </button>
+          <div class="zoom" role="group" aria-label="Cell size">
+            <button type="button" class="icon-btn" id="zoom-out" aria-label="Smaller cells" title="Smaller cells">
+              <svg class="icon" aria-hidden="true"><use href="#i-zoom-out"></use></svg>
+            </button>
+            <button type="button" class="zoom-fit" id="zoom-fit" aria-pressed="true" title="Size cells to fit the screen">Fit</button>
+            <button type="button" class="icon-btn" id="zoom-in" aria-label="Larger cells" title="Larger cells">
+              <svg class="icon" aria-hidden="true"><use href="#i-zoom-in"></use></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="notice-region" id="notice-region" aria-live="polite"></div>
+
+      <div class="result" id="result" hidden>
+        <svg class="icon result-icon" aria-hidden="true"><use id="result-icon" href="#i-trophy"></use></svg>
+        <div class="result-text">
+          <strong id="result-title"></strong>
+          <span id="result-detail"></span>
+        </div>
+        <button type="button" class="btn btn-primary" id="result-again">
+          <svg class="icon" aria-hidden="true"><use href="#i-restart"></use></svg>
+          <span>Play again</span>
+        </button>
+      </div>
+
+      <div class="board-frame" id="board-frame" data-status="none">
+        <div class="board-scroller" id="board-scroller">
+          <div class="board" id="board" role="grid" aria-label="Minefield" aria-describedby="board-help"></div>
+          <div class="board-empty" id="board-empty">
+            <div class="board-empty-inner">
+              <span class="spinner" id="board-empty-spinner" aria-hidden="true"></span>
+              <svg class="icon board-empty-icon" id="board-empty-icon" aria-hidden="true" hidden><use href="#i-offline"></use></svg>
+              <p class="board-empty-title" id="board-empty-title">Loading game...</p>
+              <p class="board-empty-text" id="board-empty-text">Contacting the local game server.</p>
+              <button type="button" class="btn btn-primary" id="board-empty-retry" hidden>Try again</button>
+            </div>
+          </div>
+        </div>
+        <div class="busy-pill" id="busy-pill" hidden>
+          <span class="spinner spinner-small" aria-hidden="true"></span>
+          <span>Waiting for the server...</span>
+        </div>
+      </div>
+
+      <div class="board-footer">
+        <p class="inspector" id="inspector">Hover over or focus a cell to see its details.</p>
+        <p class="game-meta" id="game-meta"></p>
+      </div>
+      <p class="visually-hidden" id="board-help">Arrow keys move between cells. Enter or Space reveals a cell, or opens the neighbors of a number whose flags are all placed. F toggles a flag.</p>
+    </section>
+
+    <aside class="sidebar" aria-label="Odds and help">
+      <section class="panel odds-panel" id="odds-panel" aria-labelledby="odds-heading" data-phase="off">
+        <div class="panel-head">
+          <h2 id="odds-heading">Mine odds</h2>
+          <span class="badge" id="odds-badge" data-tone="muted">Off</span>
+        </div>
+        <p class="odds-message" id="odds-message">Turn on Mine odds to shade every hidden cell by its chance of hiding a mine.</p>
+        <p class="odds-detail" id="odds-detail" hidden></p>
+        <ul class="odds-meta" id="odds-meta" aria-label="Solver details" hidden></ul>
+        <button type="button" class="btn btn-small" id="odds-retry" hidden>
+          <svg class="icon" aria-hidden="true"><use href="#i-restart"></use></svg>
+          <span>Retry odds</span>
+        </button>
+
+        <div class="legend">
+          <h3 class="legend-title">Legend</h3>
+          <div class="heat-scale" role="img" aria-label="Color scale: teal means a low chance of a mine, amber a medium chance and red a high chance">
+            <span class="heat-swatch heat-0"></span><span class="heat-swatch heat-1"></span><span class="heat-swatch heat-2"></span><span class="heat-swatch heat-3"></span><span class="heat-swatch heat-4"></span><span class="heat-swatch heat-5"></span><span class="heat-swatch heat-6"></span><span class="heat-swatch heat-7"></span><span class="heat-swatch heat-8"></span><span class="heat-swatch heat-9"></span><span class="heat-swatch heat-10"></span>
+          </div>
+          <div class="heat-labels" aria-hidden="true"><span>0%</span><span>50%</span><span>100%</span></div>
+          <div class="heat-labels heat-words" aria-hidden="true"><span>Lower risk</span><span>Higher risk</span></div>
+          <ul class="legend-keys">
+            <li><span class="legend-cell heat-2" aria-hidden="true"><span class="odds">12%</span></span><span><strong>Exact</strong> chance of a mine</span></li>
+            <li><span class="legend-cell heat-2" aria-hidden="true"><span class="odds">~12%</span></span><span><strong>Estimated</strong> chance (~ means sampled)</span></li>
+            <li><span class="legend-cell is-proven-safe" aria-hidden="true"><svg class="icon"><use href="#i-check"></use></svg></span><span><strong>Proven safe</strong>, certain from the clues</span></li>
+            <li><span class="legend-cell is-proven-mine" aria-hidden="true"><svg class="icon"><use href="#i-mine"></use></svg></span><span><strong>Proven mine</strong>, certain from the clues</span></li>
+            <li><span class="legend-cell is-plain" aria-hidden="true"></span><span><strong>No number</strong>: odds unavailable, nothing is guessed</span></li>
+          </ul>
+        </div>
+
+        <div class="explain">
+          <h3 class="legend-title">Exact or estimated?</h3>
+          <p><span class="tag tag-exact">Exact</span> Every mine layout that fits the revealed numbers and the total mine count is counted, and each cell shows the share of those layouts with a mine there.</p>
+          <p><span class="tag tag-estimate">Estimated</span> When the frontier is too tangled to count in time, weighted random layouts that fit the clues are sampled instead. These numbers carry a ~, can be substantially wrong and have no guaranteed error bound. Only the check and mine markers are certain.</p>
+          <p class="flag-note">
+            <svg class="icon" aria-hidden="true"><use href="#i-flag"></use></svg>
+            <span>Flags are your notes. The solver does not treat them as mines and never looks at the hidden layout.</span>
+          </p>
+        </div>
+      </section>
+
+      <section class="panel howto" aria-labelledby="howto-heading">
+        <h2 id="howto-heading">How to play</h2>
+        <p class="howto-lead">Open every cell that is not a mine. A number tells you how many of its 8 neighbors hide mines.</p>
+        <ul class="controls-list">
+          <li>
+            <span class="keys"><kbd>Click</kbd> <kbd>Enter</kbd> <kbd>Space</kbd></span>
+            <span>Reveal a cell. On a number whose flags are all placed, open its other neighbors (chord).</span>
+          </li>
+          <li>
+            <span class="keys"><kbd>Right-click</kbd> <kbd>F</kbd></span>
+            <span>Flag or unflag a hidden cell.</span>
+          </li>
+          <li>
+            <span class="keys"><kbd>Flag</kbd> mode or long-press</span>
+            <span>Flag cells on a touch screen.</span>
+          </li>
+          <li>
+            <span class="keys"><kbd>Arrows</kbd> <kbd>Home</kbd> <kbd>End</kbd></span>
+            <span>Move around the board. Ctrl+Home and Ctrl+End jump to the corners.</span>
+          </li>
+        </ul>
+        <p class="safe-note">
+          <svg class="icon" aria-hidden="true"><use href="#i-shield"></use></svg>
+          <span><strong>Your first reveal is always safe.</strong> Mines are placed only after it and never in that cell or its neighbors, so the first click always opens an area.</span>
+        </p>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="app-footer">
+    <p>Games are kept in the server's memory, so restarting <code>python3 server.py</code> clears them.</p>
+  </footer>
+
+  <div class="visually-hidden" id="live" aria-live="polite" aria-atomic="true"></div>
+
+  <noscript>
+    <p class="noscript">This game needs JavaScript to talk to the local game server.</p>
+  </noscript>
+</body>
+</html>
