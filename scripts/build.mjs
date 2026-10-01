@@ -1063,6 +1063,12 @@ function runnerArgs(selection) {
 function execute(command, args) {
   const result = run(command, args);
   if (result.signal) fail(`${shown(command)} terminated by ${result.signal}`);
+  if (result.status !== 0) {
+    const status = process.platform === 'win32'
+      ? `${result.status} (0x${(result.status >>> 0).toString(16).padStart(8, '0')})`
+      : String(result.status);
+    console.error(`build.mjs: ${shown(command)} failed with exit code ${status}`);
+  }
   return result.status;
 }
 
