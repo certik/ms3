@@ -152,6 +152,11 @@ ${forgeResult.toString()}
 export async function openApp(page, url = '/') {
   await page.goto(url);
   await expectReady(page);
+  // Gameplay scenarios opt into assistance explicitly. Default-preference
+  // tests use page.goto/expectReady directly to exercise a fresh page.
+  if ((await page.locator('#odds-toggle').getAttribute('aria-checked')) === 'true') {
+    await page.locator('#odds-toggle').click();
+  }
 }
 
 export async function expectReady(page) {

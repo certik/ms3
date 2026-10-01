@@ -81,9 +81,9 @@ import { EngineClient, EngineError } from './engine-client.js';
     timerHandle: 0,
     timerText: '',
     fitFrame: 0,
-    autosolve: { enabled: false, timer: 0, attemptedKey: null },
+    autosolve: { enabled: true, timer: 0, attemptedKey: null },
     odds: {
-      enabled: false,
+      enabled: true,
       gen: 0, // bumped whenever an in-flight request becomes obsolete
       requestKey: null,
       startedAt: 0,
@@ -274,8 +274,8 @@ import { EngineClient, EngineError } from './engine-client.js';
     if (isInt(prefs.zoom) && prefs.zoom >= 0 && prefs.zoom < ZOOM_STEPS.length) {
       app.zoom = { mode: 'manual', index: prefs.zoom };
     }
-    app.autosolve.enabled = prefs.autosolve === true;
-    app.odds.enabled = prefs.odds === true || app.autosolve.enabled;
+    app.autosolve.enabled = typeof prefs.autosolve === 'boolean' ? prefs.autosolve : prefs.odds !== false;
+    app.odds.enabled = prefs.odds !== false || app.autosolve.enabled;
   }
 
   function savePrefs() {

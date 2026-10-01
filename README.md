@@ -58,7 +58,8 @@ engine.
   a fresh game with your board settings.
 - The page remembers, in `localStorage`, the board size and mine count, the
   zoom, and whether **Mine odds** and **Autosolve** are on. It never stores
-  a game.
+  a game. Both modes are on by default for fresh pages; saved off settings
+  are respected. Autosolve still waits for your first reveal.
 - Moves are applied locally by the game instance, synchronously, so a move
   cannot be lost on the way or applied twice.
 - If the engine cannot be loaded, for example because `minesweeper.wasm` is

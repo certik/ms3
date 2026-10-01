@@ -4,12 +4,63 @@ import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
 import {
   NESTED_BASE, NESTED_URL, REACTOR_FILE, ROOT_URL, VENDOR_PATHS, boardInfo, cell, enableOdds, expectReady,
-  fixEntropy, oddsSettled, openApp, startPreset, track
+  fixEntropy, instrumentWorkers, oddsSettled, openApp, startPreset, track, workerStats
 } from './helpers.mjs';
 import { SITE } from './site.mjs';
 import { wrongAbiModule } from '../support/forge.mjs';
 
 const REACTOR_ROUTE = '**/' + REACTOR_FILE;
+
+test('fresh pages default to Mine odds and Autosolve without opening a cell', async ({ page }) => {
+  await instrumentWorkers(page);
+  await page.goto('/');
+  await expectReady(page);
+  await expect(page.locator('#odds-toggle')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('#autosolve-toggle')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('#autosolve-status')).toHaveText(/Choose your first cell/);
+  await expect(page.locator('#board-frame')).toHaveAttribute('data-status', 'ready');
+  await expect(page.locator('#board .cell.is-revealed')).toHaveCount(0);
+  expect((await workerStats(page)).solves).toBe(0);
+});
+
+test('default Autosolve runs after the first reveal without toggling either mode', async ({ page }) => {
+  await fixEntropy(page, 8);
+  await instrumentWorkers(page);
+  await page.goto('/');
+  await expectReady(page);
+  await cell(page, 40).click();
+  await expect(page.locator('#autosolve-status')).toHaveText(/^Your move: choose a cell/);
+  await expect(page.locator('#odds-badge')).toHaveText('Exact');
+  expect(await page.locator('#board .cell.is-flagged').count()).toBeGreaterThan(0);
+  await expect(page.locator('#board .cell.is-hidden:not(.is-flagged) .odds').first()).toBeVisible();
+  expect((await workerStats(page)).solves).toBeGreaterThan(1);
+});
+
+test('explicitly disabling the default modes persists across reloads', async ({ page }) => {
+  await page.goto('/');
+  await expectReady(page);
+  await page.locator('#odds-toggle').click();
+  await page.reload();
+  await expectReady(page);
+  await expect(page.locator('#odds-toggle')).toHaveAttribute('aria-checked', 'false');
+  await expect(page.locator('#autosolve-toggle')).toHaveAttribute('aria-checked', 'false');
+  await expect(page.locator('#odds-badge')).toHaveText('Off');
+});
+
+for (const [name, prefs, odds, autosolve] of [
+  ['unrelated saved preferences', { zoom: 2 }, true, true],
+  ['saved Autosolve off', { autosolve: false }, true, false],
+  ['saved Mine odds off', { odds: false }, false, false],
+  ['Autosolve requiring odds', { odds: false, autosolve: true }, true, true]
+]) {
+  test(`mode defaults respect ${name}`, async ({ page }) => {
+    await page.addInitScript((value) => localStorage.setItem('minesweeper.prefs', JSON.stringify(value)), prefs);
+    await page.goto('/');
+    await expectReady(page);
+    await expect(page.locator('#odds-toggle')).toHaveAttribute('aria-checked', String(odds));
+    await expect(page.locator('#autosolve-toggle')).toHaveAttribute('aria-checked', String(autosolve));
+  });
+}
 
 for (const [where, url] of [['the root', ROOT_URL], ['a nested project path', NESTED_URL]]) {
   test(`runs from ${where} with only same-site, relative requests and no API`, async ({ page }) => {
