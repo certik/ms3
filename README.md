@@ -1,5 +1,7 @@
 # Minesweeper with mine odds
 
+Online: https://certik.github.io/ms3/
+
 A browser Minesweeper game with an optional **mine-odds overlay**. Turn it on
 and every hidden cell shows its chance of holding a mine. The odds are exact
 when the position can be counted within the time budget. Otherwise they are
