@@ -73,8 +73,9 @@ export function engineModule() {
  * the module uses (self.addEventListener, self.postMessage, self.close) and
  * then imports it. `faults` are applied inside the thread before the import:
  * clockThrows makes performance.now throw (a broken host import, seen by a
- * solver that reads the clock); solveTraps makes ms_solve_observation throw
- * a RuntimeError, as a trap escaping the export would.
+ * solver that reads the clock); solveTraps (planTraps) makes
+ * ms_solve_observation (ms_plan_observation) throw a RuntimeError, as a trap
+ * escaping the export would.
  */
 export function nodeWorkerFactory(faults = {}) {
   const created = [];

@@ -4,7 +4,8 @@
  *
  *   ms_tests [--suite NAME[,NAME...]]... [--list]
  *
- * NAME is runtime, bigint, game, probability, autosolve, api or all.
+ * NAME is runtime, bigint, game, probability, posterior, planner, autosolve,
+ * api or all.
  * Without --suite every suite runs. scripts/build.mjs compiles a suite in
  * (defining MS_TEST_SUITE_<NAME>=1) only together with its sources, so peers
  * can build subsets while modules are in progress; requesting a suite that
@@ -38,6 +39,18 @@ void test_probability(void);
 #else
 #define MS_RUN_PROBABILITY NULL
 #endif
+#if MS_TEST_SUITE_POSTERIOR
+void test_posterior(void);
+#define MS_RUN_POSTERIOR test_posterior
+#else
+#define MS_RUN_POSTERIOR NULL
+#endif
+#if MS_TEST_SUITE_PLANNER
+void test_planner(void);
+#define MS_RUN_PLANNER test_planner
+#else
+#define MS_RUN_PLANNER NULL
+#endif
 #if MS_TEST_SUITE_AUTOSOLVE
 void test_autosolve(void);
 #define MS_RUN_AUTOSOLVE test_autosolve
@@ -61,6 +74,8 @@ static const test_suite SUITES[] = {
     {"bigint", MS_RUN_BIGINT},
     {"game", MS_RUN_GAME},
     {"probability", MS_RUN_PROBABILITY},
+    {"posterior", MS_RUN_POSTERIOR},
+    {"planner", MS_RUN_PLANNER},
     {"autosolve", MS_RUN_AUTOSOLVE},
     {"api", MS_RUN_API},
 };
@@ -74,8 +89,8 @@ static int usage_error(const char *message, const char *detail) {
         test_print(": ");
         test_print(detail);
     }
-    test_print("\nusage: ms_tests [--suite runtime|bigint|game|probability|autosolve|api|all"
-               "[,...]]... [--list]\n");
+    test_print("\nusage: ms_tests [--suite runtime|bigint|game|probability|posterior|planner|"
+               "autosolve|api|all[,...]]... [--list]\n");
     return 2;
 }
 

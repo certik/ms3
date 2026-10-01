@@ -33,6 +33,10 @@
  *     equal to 0 or Z; otherwise propagation and the structural proofs of
  *     exhaustively counted components. Doubles appear only in the final
  *     ratio conversions and the effective sample size.
+ *  7. ms_posterior_generate (posterior.h) runs stages 1-6 on part of its
+ *     time budget and, before the workspace is released, turns the kept DP
+ *     layers, histograms and weighted samples into complete layouts by
+ *     exact integer ranks (see the stage 7 section).
  *
  * Memory: every allocation comes from the caller's workspace, capped at
  * memory_budget_bytes (rt_mem_limit) and released before returning. Frozen
@@ -50,6 +54,7 @@
 #include "engine.h"
 #include "runtime.h"
 #include "bigint.h"
+#include "posterior.h"
 
 #include <base/math.h>
 #include <base/mem.h>
@@ -2444,16 +2449,20 @@ static ms_status pb_check_args(const void *obs, size_t obs_len, const ms_infer_l
     return ms_limits_validate(limits);
 }
 
-ms_status ms_solve(const void *obs, size_t obs_len, const ms_infer_limits *limits,
-                   rt_mem *workspace, rt_clock *clock, void *result, size_t result_len) {
-    ms_status status = pb_check_args(obs, obs_len, limits, workspace, clock, result, result_len);
-    if (status != MS_OK) return status;
-    const ms_obs_header *h = (const ms_obs_header *)obs;
-    status = pb_quick_contradictions(h, ms_obs_clues(obs));
-    if (status != MS_OK) return status;
+/* What a call must restore on exit: the caller's workspace budget and the
+ * mark every allocation of the call is rewound to. */
+typedef struct pb_entry {
+    size_t saved_budget;
+    rt_mark mark;
+    uint64_t hash; /* ms_obs_hash of the observation */
+} pb_entry;
 
-    pb_solver solver;
-    pb_solver *s = &solver;
+/* Sets up the solver of one validated call: limits, observation, RNG seed,
+ * the entry clock reading, the workspace cap and the pool. `budget_ms` is
+ * the inference time budget (ms_solve: all of limits->time_budget_ms). */
+static void pb_open(pb_solver *s, const void *obs, const ms_infer_limits *limits,
+                    rt_mem *workspace, rt_clock *clock, double budget_ms, pb_entry *entry) {
+    const ms_obs_header *h = (const ms_obs_header *)obs;
     base_memset(s, 0, sizeof(*s));
     s->mem = workspace;
     s->clock = clock;
@@ -2467,10 +2476,10 @@ ms_status ms_solve(const void *obs, size_t obs_len, const ms_infer_limits *limit
     s->sample_budget = limits->sample_budget;
     s->store_budget = limits->max_stored_entries;
     s->min_ess = limits->min_effective_samples;
-    s->budget_ms = limits->time_budget_ms;
-    s->infinite = !(limits->time_budget_ms < HUGE_VAL);
-    uint64_t hash = ms_obs_hash(obs);
-    rt_rng_seed(&s->rng, (limits->flags & MS_LIMIT_EXPLICIT_SEED) ? limits->seed : hash);
+    s->budget_ms = budget_ms;
+    s->infinite = !(budget_ms < HUGE_VAL);
+    entry->hash = ms_obs_hash(obs);
+    rt_rng_seed(&s->rng, (limits->flags & MS_LIMIT_EXPLICIT_SEED) ? limits->seed : entry->hash);
     bi_init(&s->z);
     bi_init(&s->bulk_num);
     bi_init(&s->bulk_den);
@@ -2480,17 +2489,743 @@ ms_status ms_solve(const void *obs, size_t obs_len, const ms_infer_limits *limit
     size_t bytes = limits->memory_budget_bytes > (uint64_t)SIZE_MAX
                        ? SIZE_MAX
                        : (size_t)limits->memory_budget_bytes;
-    size_t saved_budget = rt_mem_limit(workspace, bytes);
-    rt_mark mark = rt_mem_mark(workspace);
+    entry->saved_budget = rt_mem_limit(workspace, bytes);
+    entry->mark = rt_mem_mark(workspace);
     s->misuses0 = workspace->misuses;
     bi_pool_init(&s->pool, workspace);
+}
 
-    pb_rc rc = pb_run(s);
-    if (rc == PB_OK) rc = pb_finish(s, result, hash);
-    status = rc == PB_OK ? MS_OK : rc == PB_UNSAT ? MS_ERR_INCONSISTENT : MS_ERR_INTERNAL;
-
-    pb_cleanup(s, mark);
-    rt_mem_set_budget(workspace, saved_budget);
-    if (workspace->misuses != s->misuses0) status = MS_ERR_INTERNAL;
+/* Releases everything the call allocated, restores the caller's budget and
+ * maps the outcome to a status (workspace misuse is internal). */
+static ms_status pb_close(pb_solver *s, const pb_entry *entry, pb_rc rc) {
+    ms_status status = rc == PB_OK ? MS_OK : rc == PB_UNSAT ? MS_ERR_INCONSISTENT : MS_ERR_INTERNAL;
+    pb_cleanup(s, entry->mark);
+    rt_mem_set_budget(s->mem, entry->saved_budget);
+    if (s->mem->misuses != s->misuses0) status = MS_ERR_INTERNAL;
     return status;
+}
+
+ms_status ms_solve(const void *obs, size_t obs_len, const ms_infer_limits *limits,
+                   rt_mem *workspace, rt_clock *clock, void *result, size_t result_len) {
+    ms_status status = pb_check_args(obs, obs_len, limits, workspace, clock, result, result_len);
+    if (status != MS_OK) return status;
+    status = pb_quick_contradictions((const ms_obs_header *)obs, ms_obs_clues(obs));
+    if (status != MS_OK) return status;
+
+    pb_solver solver;
+    pb_entry entry;
+    pb_open(&solver, obs, limits, workspace, clock, limits->time_budget_ms, &entry);
+    pb_rc rc = pb_run(&solver);
+    if (rc == PB_OK) rc = pb_finish(&solver, result, entry.hash);
+    return pb_close(&solver, &entry, rc);
+}
+
+/* ======================================================================
+ * Stage 7: complete posterior layouts (ms_posterior_generate, posterior.h)
+ *
+ * Every complete layout splits into the propagated cells (fixed), one
+ * layout of each component and a subset of the U pool cells holding the
+ * R - t mines the components leave, where t is their mine total:
+ *
+ *   Z = sum_t Q[t] C(U, R - t),   Q = H_1 * H_2 * ... * H_m.
+ *
+ * A balanced product tree over the component histograms (an internal node
+ * holds the product of its children, truncated at R mines) turns this into
+ * a mixed-radix number system over [0, Z):
+ *  - the root: a rank r falls into the bucket of t whose width is
+ *    Q[t] C(U, R - t); the offset o in it gives (a, b) = divmod(o,
+ *    C(U, R - t)): a ranks the component part below Q[t], b the pool subset
+ *    (combinatorial number system over the pool cells in ascending order);
+ *  - an internal node with t mines and rank a: its left child's count t1
+ *    falls into buckets of width P_left[t1] P_right[t - t1], and the offset
+ *    splits by divmod(offset, P_right[t - t1]) into both children's ranks;
+ *  - an exactly counted component with k mines and rank e < H[k]: its kept
+ *    DP is walked backward from the final state. The incoming edges
+ *    (src, x) of a state holding J mines form buckets of width
+ *    C(size, x) N_src[J - x], where N is the forward count of the layer;
+ *    the offset modulo C(size, x) picks the x-subset of the group's cells
+ *    and the quotient (below N_src[J - x]) continues at src with J - x;
+ *  - a sampled component with k mines and rank e: its distinct sampled
+ *    layouts with k mines form buckets of width occurrences * 2^choices.
+ * Each step is a bijection between ranks and choices (bucket widths sum
+ * to exactly the parent's coefficient; the walk checks it), so ranks
+ * 0 .. Z - 1 list every layout once and a uniform rank is a uniform layout.
+ * With sampled components the same map gives each combination weight
+ * prod_j occurrences(L_j) 2^choices(L_j) / Z: their histograms here are
+ * pb_sample_all's, so Z is the solver's importance-weighted total and the
+ * mine total couples every component and the pool exactly. Draws take a
+ * uniform rank by rejection over exact random bits (never floating point)
+ * and choose the pool subset by a fresh Fisher-Yates draw instead of b.
+ * Every row is checked against the clues and the total before it counts.
+ * ====================================================================== */
+
+/* Share of the remaining generation time an exhaustive enumeration may use
+ * when draws are requested as well (the rest is left for the draws that
+ * replace an enumeration which cannot finish). */
+#define PB_ENUM_FRACTION 0.5
+/* Rejection attempts for one uniform rank; each succeeds with probability
+ * above 1/2, so failing all of them has probability below 2^-64. */
+#define PB_RANK_ATTEMPTS 64u
+/* Separates the draw stream from the solver's importance-sampling stream. */
+#define PB_POSTERIOR_STREAM 0x706F73746572696Full /* "posterio" */
+
+/* A node of the product tree. Leaves 0..m-1 are the components in solver
+ * order; internal nodes follow, each after both of its children. */
+typedef struct pb_tnode {
+    uint32_t left;      /* PB_NONE for a leaf */
+    uint32_t right;
+    uint32_t lo;        /* coef[j]: weight of the subtree holding lo + j mines */
+    uint32_t len;
+    const bigint *coef;
+    uint32_t t;         /* per row: mines of the subtree */
+    uint32_t reserved;
+    bigint rank;        /* per row: rank below coef[t - lo] */
+} pb_tnode;
+
+/* Incoming DP edges of every state, per layer of an exact component. */
+typedef struct pb_incoming {
+    uint32_t **start;   /* layer i: CSR over the states of layer i + 1 */
+    uint32_t **edge;    /* layer i: indices into edges[i], by destination */
+} pb_incoming;
+
+typedef struct pb_gen {
+    pb_solver *s;
+    rt_rng rng;
+    rt_meter meter;
+    uint32_t stop;          /* MS_REASON_* behind the last PB_BUDGET */
+    uint32_t nodes;
+    uint32_t root;
+    uint32_t tlo;           /* component totals t in [tlo, tlo + tlen) */
+    uint32_t tlen;
+    uint32_t rank_bits;     /* bit length of Z - 1 */
+    pb_tnode *node;
+    pb_incoming *in;        /* per component (exact components only) */
+    uint32_t *sample_start; /* CSR: distinct samples of each component */
+    uint32_t *sample_list;
+    bigint *sample_weight;  /* occurrences * 2^choices per distinct sample */
+    bigint *binom;          /* C(U, R - t) */
+    bigint *cum;            /* sum of the buckets Q[t] C(U, R - t) up to t */
+    uint32_t *limbs;        /* random rank scratch */
+    uint8_t *base;          /* propagated mines; every other cell 0 */
+    uint32_t *pool;         /* the pool cells, shuffled by draws */
+    bigint rank;
+    bigint rest;
+    bigint part;
+} pb_gen;
+
+/* Internal node `at` = node a times node b, truncated at R mines. */
+static pb_rc pb_gen_product(pb_gen *g, uint32_t at, uint32_t a, uint32_t b) {
+    pb_solver *s = g->s;
+    const pb_tnode *A = &g->node[a];
+    const pb_tnode *B = &g->node[b];
+    int64_t lo = (int64_t)A->lo + (int64_t)B->lo;
+    /* Z > 0, so the least mines of every subtree fit within R. */
+    if (lo > (int64_t)s->remaining || A->len == 0 || B->len == 0) return PB_BUG;
+    uint32_t len = (uint32_t)pb_min_i64((int64_t)A->len + B->len - 1,
+                                        (int64_t)s->remaining - lo + 1);
+    bigint *coef;
+    if (!PB_NEW(s, coef, len)) return pb_fail_rc(s);
+    for (uint32_t i = 0; i < A->len && i < len; i++) {
+        if (bi_is_zero(&A->coef[i])) continue;
+        uint32_t span = pb_min_u32(B->len, len - i);
+        if (rt_meter_work(&g->meter, span)) return PB_BUDGET;
+        for (uint32_t j = 0; j < span; j++) {
+            if (bi_is_zero(&B->coef[j])) continue;
+            PB_TRYBI(pb_addmul(&s->pool, &coef[i + j], &A->coef[i], &B->coef[j]));
+        }
+    }
+    pb_tnode *N = &g->node[at];
+    N->left = a;
+    N->right = b;
+    N->lo = (uint32_t)lo;
+    N->len = len;
+    N->coef = coef;
+    return PB_OK;
+}
+
+/* Leaves for the components, then pairwise products level by level (an odd
+ * node out moves up unchanged). Without components the root is the
+ * constant 1 at zero mines. */
+static pb_rc pb_gen_tree(pb_gen *g) {
+    pb_solver *s = g->s;
+    uint32_t m = s->ncomp;
+    if (m == 0) {
+        bigint *one;
+        if (!PB_NEW(s, g->node, 1) || !PB_NEW(s, one, 1)) return pb_fail_rc(s);
+        bi_set_u64(one, 1);
+        g->node[0].left = PB_NONE;
+        g->node[0].right = PB_NONE;
+        g->node[0].len = 1;
+        g->node[0].coef = one;
+        g->nodes = 1;
+        g->root = 0;
+        return PB_OK;
+    }
+    uint32_t nodes = 2u * m - 1u;
+    uint32_t *level;
+    if (!PB_NEW(s, g->node, nodes) || !PB_NEW(s, level, m)) return pb_fail_rc(s);
+    for (uint32_t k = 0; k < m; k++) {
+        const pb_comp *c = s->comp[k];
+        if (c->hist == NULL || c->hlen == 0) return PB_BUG;
+        pb_tnode *leaf = &g->node[k];
+        leaf->left = PB_NONE;
+        leaf->right = PB_NONE;
+        leaf->lo = c->hlo;
+        leaf->len = c->hlen;
+        leaf->coef = c->hist;
+        level[k] = k;
+    }
+    uint32_t count = m;
+    uint32_t next = m;
+    while (count > 1u) {
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < count; i += 2u) {
+            if (i + 1u == count) {
+                level[kept++] = level[i];
+                break;
+            }
+            PB_TRY(pb_gen_product(g, next, level[i], level[i + 1u]));
+            level[kept++] = next++;
+        }
+        count = kept;
+    }
+    if (next != nodes) return PB_BUG;
+    g->nodes = nodes;
+    g->root = level[0];
+    return PB_OK;
+}
+
+/* The root buckets: C(U, R - t) and the running sums of Q[t] C(U, R - t)
+ * over the feasible totals, whose last entry must be the solver's Z. */
+static pb_rc pb_gen_roots(pb_gen *g) {
+    pb_solver *s = g->s;
+    bi_pool *pool = &s->pool;
+    const pb_tnode *root = &g->node[g->root];
+    int64_t R = s->remaining;
+    int64_t U = s->pool_cells;
+    int64_t tlo = pb_max_i64((int64_t)root->lo, R - U);
+    int64_t thi = pb_min_i64((int64_t)root->lo + root->len - 1, R);
+    if (thi < tlo) return PB_BUG; /* Z would be 0 */
+    uint32_t tlen = (uint32_t)(thi - tlo + 1);
+    bigint *T, *cum;
+    if (!PB_NEW(s, T, tlen) || !PB_NEW(s, cum, tlen)) return pb_fail_rc(s);
+    if (rt_meter_work(&g->meter, 2u * tlen)) return PB_BUDGET;
+    PB_TRYBI(bi_binomial(pool, &T[tlen - 1u], (uint32_t)U, (uint32_t)(R - thi)));
+    for (int64_t at = thi; at > tlo; at--) {
+        uint32_t idx = (uint32_t)(at - tlo);
+        PB_TRYBI(bi_copy(pool, &T[idx - 1u], &T[idx]));
+        PB_TRYBI(bi_binomial_next(pool, &T[idx - 1u], (uint32_t)U, (uint32_t)(R - at)));
+    }
+    for (uint32_t i = 0; i < tlen; i++) {
+        if (rt_meter_work(&g->meter, 2u)) return PB_BUDGET;
+        if (i > 0) PB_TRYBI(bi_copy(pool, &cum[i], &cum[i - 1u]));
+        const bigint *q = &root->coef[(uint32_t)(tlo - (int64_t)root->lo) + i];
+        if (!bi_is_zero(q)) PB_TRYBI(pb_addmul(pool, &cum[i], q, &T[i]));
+    }
+    if (!bi_eq(&cum[tlen - 1u], &s->z)) return PB_BUG; /* the solver's Z */
+    g->tlo = (uint32_t)tlo;
+    g->tlen = tlen;
+    g->binom = T;
+    g->cum = cum;
+    return PB_OK;
+}
+
+/* Incoming edges by destination for the backward walks (counting sort,
+ * stable: ascending edge index within each state). */
+static pb_rc pb_gen_incoming(pb_gen *g) {
+    pb_solver *s = g->s;
+    if (!PB_NEW(s, g->in, s->ncomp)) return pb_fail_rc(s);
+    for (uint32_t k = 0; k < s->ncomp; k++) {
+        const pb_comp *c = s->comp[k];
+        if (c->mode != PB_EXACT) continue;
+        uint32_t G = c->ngroups;
+        pb_incoming *in = &g->in[k];
+        if (!PB_NEW(s, in->start, G) || !PB_NEW(s, in->edge, G)) return pb_fail_rc(s);
+        for (uint32_t i = 0; i < G; i++) {
+            const pb_edges *E = &c->edges[i];
+            uint32_t states = c->layers[i + 1u].count;
+            uint32_t *start, *edge;
+            if (!PB_NEW(s, start, (size_t)states + 1u) || !PB_NEW(s, edge, E->count)) {
+                return pb_fail_rc(s);
+            }
+            if (rt_meter_work(&g->meter, E->count + 1u)) return PB_BUDGET;
+            for (uint32_t e = 0; e < E->count; e++) {
+                if (E->dst[e] >= states || E->src[e] >= c->layers[i].count) return PB_BUG;
+                start[E->dst[e]]++;
+            }
+            for (uint32_t d = 1; d < states; d++) start[d] += start[d - 1u];
+            start[states] = E->count;
+            for (uint32_t e = E->count; e-- > 0;) edge[--start[E->dst[e]]] = e;
+            in->start[i] = start;
+            in->edge[i] = edge;
+        }
+    }
+    return PB_OK;
+}
+
+/* The distinct samples of each sampled component and their weights
+ * occurrences * 2^choices (pb_sample_all's histogram terms). */
+static pb_rc pb_gen_samples(pb_gen *g) {
+    pb_solver *s = g->s;
+    uint32_t m = s->ncomp;
+    uint32_t ns = s->nsamples;
+    if (ns == 0) return PB_OK;
+    const pb_sample *samples = (const pb_sample *)s->vec[PB_V_SAMPLES].data;
+    uint32_t *start, *list;
+    bigint *weight;
+    if (!PB_NEW(s, start, (size_t)m + 1u) || !PB_NEW(s, list, ns) || !PB_NEW(s, weight, ns)) {
+        return pb_fail_rc(s);
+    }
+    for (uint32_t i = 0; i < ns; i++) {
+        if (samples[i].comp >= m || s->comp[samples[i].comp]->mode != PB_SAMPLED) return PB_BUG;
+        start[samples[i].comp]++;
+    }
+    for (uint32_t k = 1; k < m; k++) start[k] += start[k - 1u];
+    start[m] = ns;
+    for (uint32_t i = ns; i-- > 0;) list[--start[samples[i].comp]] = i;
+    for (uint32_t i = 0; i < ns; i++) {
+        if (rt_meter_work(&g->meter, 1u + samples[i].choices / 32u)) return PB_BUDGET;
+        bi_set_u64(&weight[i], samples[i].occurrences);
+        PB_TRYBI(bi_shl(&s->pool, &weight[i], &weight[i], samples[i].choices));
+    }
+    g->sample_start = start;
+    g->sample_list = list;
+    g->sample_weight = weight;
+    return PB_OK;
+}
+
+static pb_rc pb_gen_prepare(pb_gen *g) {
+    pb_solver *s = g->s;
+    if (!PB_NEW(s, g->base, s->n) || !PB_NEW(s, g->pool, s->pool_cells)) return pb_fail_rc(s);
+    for (uint32_t v = 0; v < s->n; v++) {
+        g->base[v] = s->clue[v] == MS_CLUE_HIDDEN && s->val[v] == 1 ? 1u : 0u;
+    }
+    for (uint32_t t = 0; t < s->pool_cells; t++) g->pool[t] = s->bulk[t];
+    if (rt_meter_work(&g->meter, (s->n >> 6) + 1u)) return PB_BUDGET;
+    PB_TRY(pb_gen_tree(g));
+    PB_TRY(pb_gen_roots(g));
+    PB_TRY(pb_gen_incoming(g));
+    PB_TRY(pb_gen_samples(g));
+    bigint one = BI_ZERO_INIT;
+    bi_set_u64(&one, 1);
+    PB_TRYBI(bi_sub(&s->pool, &g->part, &s->z, &one));
+    g->rank_bits = bi_bit_length(&g->part);
+    if (!PB_NEW(s, g->limbs, g->rank_bits / 32u + 1u)) return pb_fail_rc(s);
+    return PB_OK;
+}
+
+/* g->rank uniform in [0, Z): rank_bits random bits (exactly Z - 1 fits),
+ * rejected while >= Z. At most PB_RANK_ATTEMPTS attempts, each accepted
+ * with probability Z / 2^rank_bits > 1/2 and each metered against the
+ * deadline, so the loop is bounded in work and time; acceptance keeps it
+ * uniform. Running out of attempts is SAMPLING_BUDGET_EXHAUSTED. */
+static pb_rc pb_gen_random(pb_gen *g) {
+    pb_solver *s = g->s;
+    uint32_t bits = g->rank_bits;
+    if (bits == 0) {
+        bi_set_zero(&g->rank); /* Z == 1 */
+        return PB_OK;
+    }
+    uint32_t count = (bits + 31u) / 32u;
+    uint32_t mask = (bits & 31u) ? (1u << (bits & 31u)) - 1u : UINT32_MAX;
+    for (uint32_t attempt = 0; attempt < PB_RANK_ATTEMPTS; attempt++) {
+        if (rt_meter_work(&g->meter, count)) return PB_BUDGET;
+        for (uint32_t k = 0; k < count; k++) g->limbs[k] = rt_rng_u32(&g->rng);
+        g->limbs[count - 1u] &= mask;
+        PB_TRYBI(bi_set_limbs(&s->pool, &g->rank, g->limbs, count));
+        if (bi_cmp(&g->rank, &s->z) < 0) return PB_OK;
+    }
+    g->stop = MS_REASON_SAMPLING_BUDGET_EXHAUSTED;
+    return PB_BUDGET;
+}
+
+/* An internal node with its t and rank: its children's totals and ranks. */
+static pb_rc pb_gen_split(pb_gen *g, const pb_tnode *nd) {
+    pb_solver *s = g->s;
+    pb_tnode *A = &g->node[nd->left];
+    pb_tnode *B = &g->node[nd->right];
+    int64_t t = nd->t;
+    int64_t lo = pb_max_i64((int64_t)A->lo, t - ((int64_t)B->lo + B->len - 1));
+    int64_t hi = pb_min_i64((int64_t)A->lo + A->len - 1, t - (int64_t)B->lo);
+    PB_TRYBI(bi_copy(&s->pool, &g->rest, &nd->rank));
+    for (int64_t t1 = lo; t1 <= hi; t1++) {
+        const bigint *x = &A->coef[t1 - A->lo];
+        const bigint *y = &B->coef[t - t1 - B->lo];
+        if (bi_is_zero(x) || bi_is_zero(y)) continue;
+        if (rt_meter_work(&g->meter, 1u)) return PB_BUDGET;
+        PB_TRYBI(bi_mul(&s->pool, &g->part, x, y));
+        if (bi_cmp(&g->rest, &g->part) < 0) {
+            PB_TRYBI(bi_divmod(&s->pool, &A->rank, &B->rank, &g->rest, y));
+            A->t = (uint32_t)t1;
+            B->t = (uint32_t)(t - t1);
+            return PB_OK;
+        }
+        PB_TRYBI(bi_sub(&s->pool, &g->rest, &g->rest, &g->part));
+    }
+    return PB_BUG; /* the buckets add up to coef[t - lo] > rank */
+}
+
+/* Marks the h-th x-subset (combinatorial number system) of a group. */
+static pb_rc pb_gen_subset(const pb_comp *c, uint32_t grp, uint32_t x, uint32_t h, uint8_t *row) {
+    uint32_t first = c->group_start[grp];
+    uint32_t size = c->group_start[grp + 1u] - first;
+    for (uint32_t i = 0; i < size && x > 0; i++) {
+        uint32_t skip = PB_BINOM[size - i - 1u][x]; /* subsets without cell i */
+        if (h < skip) continue;
+        h -= skip;
+        x--;
+        row[c->cells[c->group_vars[first + i]]] = 1;
+    }
+    return x == 0 && h == 0 ? PB_OK : PB_BUG;
+}
+
+/* The e-th layout with k mines of an exactly counted component (e is
+ * consumed): backward through the kept DP from the final state. */
+static pb_rc pb_gen_exact(pb_gen *g, const pb_incoming *in, const pb_comp *c, uint32_t k,
+                          bigint *e, uint8_t *row) {
+    pb_solver *s = g->s;
+    bi_pool *pool = &s->pool;
+    uint32_t G = c->ngroups;
+    const pb_layer *F = &c->layers[G];
+    if (F->count != 1 || k < F->lo[0] || k - F->lo[0] >= F->len[0] ||
+        bi_cmp(e, &F->coef[F->start[0] + (k - F->lo[0])]) >= 0) {
+        return PB_BUG;
+    }
+    uint32_t d = 0;
+    uint32_t J = k;
+    for (uint32_t i = G; i-- > 0;) {
+        const pb_layer *L = &c->layers[i];
+        const pb_edges *E = &c->edges[i];
+        uint32_t grp = c->order[i];
+        uint32_t size = pb_group_size(c, grp);
+        uint32_t from = in->start[i][d];
+        uint32_t to = in->start[i][d + 1u];
+        if (rt_meter_work(&g->meter, to - from + 1u)) return PB_BUDGET;
+        uint32_t chosen = PB_NONE;
+        for (uint32_t p = from; p < to; p++) {
+            uint32_t edge = in->edge[i][p];
+            uint32_t st = E->src[edge];
+            uint32_t x = E->x[edge];
+            if (x > J || J - x < L->lo[st] || J - x - L->lo[st] >= L->len[st]) continue;
+            const bigint *v = &L->coef[L->start[st] + (J - x - L->lo[st])];
+            if (bi_is_zero(v)) continue;
+            PB_TRYBI(bi_mul_u32(pool, &g->part, v, PB_BINOM[size][x]));
+            if (bi_cmp(e, &g->part) < 0) {
+                chosen = edge;
+                break;
+            }
+            PB_TRYBI(bi_sub(pool, e, e, &g->part));
+        }
+        if (chosen == PB_NONE) return PB_BUG; /* widths add up to N[d][J] > e */
+        uint32_t x = E->x[chosen];
+        uint32_t h;
+        PB_TRYBI(bi_divmod_u32(pool, e, e, PB_BINOM[size][x], &h));
+        PB_TRY(pb_gen_subset(c, grp, x, h, row));
+        d = E->src[chosen];
+        J -= x;
+    }
+    return d == 0 && J == 0 && bi_is_zero(e) ? PB_OK : PB_BUG;
+}
+
+/* The distinct sample of a sampled component with k mines whose weight
+ * bucket holds e. */
+static pb_rc pb_gen_sampled(pb_gen *g, uint32_t ci, const pb_comp *c, uint32_t k, bigint *e,
+                            uint8_t *row) {
+    pb_solver *s = g->s;
+    const pb_sample *samples = (const pb_sample *)s->vec[PB_V_SAMPLES].data;
+    const uint32_t *words = (const uint32_t *)s->vec[PB_V_WORDS].data;
+    if (g->sample_start == NULL) return PB_BUG;
+    for (uint32_t p = g->sample_start[ci]; p < g->sample_start[ci + 1u]; p++) {
+        uint32_t i = g->sample_list[p];
+        const pb_sample *sm = &samples[i];
+        if (sm->mines != k) continue;
+        if (rt_meter_work(&g->meter, 1u)) return PB_BUDGET;
+        const bigint *w = &g->sample_weight[i];
+        if (bi_cmp(e, w) < 0) {
+            const uint32_t *bits = words + sm->words;
+            for (uint32_t v = 0; v < c->ncells; v++) {
+                if ((bits[v >> 5] >> (v & 31u)) & 1u) row[c->cells[v]] = 1;
+            }
+            return PB_OK;
+        }
+        PB_TRYBI(bi_sub(&s->pool, e, e, w));
+    }
+    return PB_BUG; /* the weights add up to the histogram entry > e */
+}
+
+/* The pool's `mines`: the subset ranked g->part below C(U, mines) =
+ * binom[bucket] (enumeration; it is at most Z <= exact_limit, so every
+ * intermediate binomial is a 64-bit value), or a uniform draw. */
+static pb_rc pb_gen_pool(pb_gen *g, uint32_t mines, uint32_t bucket, bool enumerate,
+                         uint8_t *row) {
+    pb_solver *s = g->s;
+    uint32_t U = s->pool_cells;
+    if (mines > U) return PB_BUG;
+    if (rt_meter_work(&g->meter, (U >> 6) + 1u)) return PB_BUDGET;
+    if (!enumerate) {
+        rt_rng_choose(&g->rng, g->pool, U, mines);
+        for (uint32_t j = 0; j < mines; j++) row[g->pool[j]] = 1;
+        return PB_OK;
+    }
+    uint64_t b, c, product;
+    if (!bi_get_u64(&g->part, &b) || !bi_get_u64(&g->binom[bucket], &c) || b >= c) return PB_BUG;
+    uint32_t x = mines;
+    for (uint32_t i = 0; i < U && x > 0; i++) {
+        uint64_t n = U - i; /* c = C(n, x) completions of the cells decided so far */
+        if (!rt_mul_u64(c, n - x, &product)) return PB_BUG;
+        uint64_t skip = product / n; /* C(n - 1, x): subsets without cell i */
+        if (b < skip) {
+            c = skip;
+            continue;
+        }
+        b -= skip;
+        if (!rt_mul_u64(c, x, &product)) return PB_BUG;
+        c = product / n; /* C(n - 1, x - 1) */
+        x--;
+        row[s->bulk[i]] = 1;
+    }
+    return x == 0 && b == 0 ? PB_OK : PB_BUG;
+}
+
+/* A complete layout: revealed cells safe, every clue and the total met. */
+static bool pb_gen_valid(const pb_solver *s, const uint8_t *row) {
+    uint32_t mines = 0;
+    for (uint32_t v = 0; v < s->n; v++) {
+        if (row[v] > 1u) return false;
+        mines += row[v];
+        if (s->clue[v] == MS_CLUE_HIDDEN) continue;
+        if (row[v]) return false;
+        uint32_t around[8];
+        uint32_t count = rt_grid_neighbors(s->width, s->height, v, around);
+        uint32_t near = 0;
+        for (uint32_t k = 0; k < count; k++) near += row[around[k]];
+        if (near != s->clue[v]) return false;
+    }
+    return mines == s->total;
+}
+
+/* Writes the layout of rank g->rank (< Z). `enumerate`: the pool subset
+ * comes from the rank as well; otherwise from a fresh uniform draw. */
+static pb_rc pb_gen_row(pb_gen *g, bool enumerate, uint8_t *row) {
+    pb_solver *s = g->s;
+    bi_pool *pool = &s->pool;
+    base_memcpy(row, g->base, s->n);
+    /* The copy and the final per-cell check (pb_gen_valid) of the row. */
+    if (rt_meter_work(&g->meter, (s->n >> 3) + 1u)) return PB_BUDGET;
+    uint32_t lo = 0, hi = g->tlen - 1u;
+    while (lo < hi) {
+        uint32_t mid = lo + (hi - lo) / 2u;
+        if (bi_cmp(&g->rank, &g->cum[mid]) < 0) {
+            hi = mid;
+        } else {
+            lo = mid + 1u;
+        }
+    }
+    if (bi_cmp(&g->rank, &g->cum[lo]) >= 0) return PB_BUG; /* rank >= Z */
+    if (lo > 0) {
+        PB_TRYBI(bi_sub(pool, &g->rest, &g->rank, &g->cum[lo - 1u]));
+    } else {
+        PB_TRYBI(bi_copy(pool, &g->rest, &g->rank));
+    }
+    pb_tnode *root = &g->node[g->root];
+    root->t = g->tlo + lo;
+    PB_TRYBI(bi_divmod(pool, &root->rank, enumerate ? &g->part : NULL, &g->rest, &g->binom[lo]));
+    if (enumerate) PB_TRY(pb_gen_pool(g, s->remaining - root->t, lo, true, row));
+    if (s->ncomp >= 2u) {
+        for (uint32_t k = g->nodes; k-- > s->ncomp;) PB_TRY(pb_gen_split(g, &g->node[k]));
+    }
+    for (uint32_t k = 0; k < s->ncomp; k++) {
+        const pb_comp *c = s->comp[k];
+        pb_tnode *leaf = &g->node[k];
+        if (c->mode == PB_EXACT) {
+            PB_TRY(pb_gen_exact(g, &g->in[k], c, leaf->t, &leaf->rank, row));
+        } else if (c->mode == PB_SAMPLED) {
+            PB_TRY(pb_gen_sampled(g, k, c, leaf->t, &leaf->rank, row));
+        } else {
+            return PB_BUG;
+        }
+    }
+    if (!enumerate) PB_TRY(pb_gen_pool(g, s->remaining - root->t, lo, false, row));
+    return pb_gen_valid(s, row) ? PB_OK : PB_BUG;
+}
+
+/* Up to `want` rows: ranks 0, 1, ... (enumerate) or uniform draws.
+ * *count: rows completed (an interrupted row does not count). */
+static pb_rc pb_gen_rows(pb_gen *g, uint8_t *layouts, uint32_t want, bool enumerate,
+                         uint32_t *count) {
+    *count = 0;
+    for (uint32_t i = 0; i < want; i++) {
+        if (enumerate) {
+            bi_set_u64(&g->rank, i);
+        } else {
+            PB_TRY(pb_gen_random(g));
+        }
+        PB_TRY(pb_gen_row(g, enumerate, layouts + (size_t)i * g->s->n));
+        *count = i + 1u;
+    }
+    return PB_OK;
+}
+
+/* Stage 7 after a written result: the rows and *info (zeroed by the
+ * caller). Shortfalls are reasons; only PB_BUG is an error. */
+static pb_rc pb_posterior(pb_solver *s, uint64_t seed, uint32_t exact_limit,
+                          uint32_t sample_count, double deadline_ms, const void *result,
+                          uint8_t *layouts, ms_posterior_info *info) {
+    const ms_result_header *r = (const ms_result_header *)result;
+    info->reason = r->reason;
+    info->effective_samples = r->has_effective_sample_size ? r->effective_sample_size : 0.0;
+    if (r->status == MS_PROB_UNAVAILABLE) return PB_OK;
+    if (r->status != MS_PROB_EXACT && r->status != MS_PROB_APPROXIMATE) return PB_BUG;
+    if (!s->combined || bi_is_zero(&s->z)) return PB_BUG;
+    bool exact = r->status == MS_PROB_EXACT;
+    uint64_t z64 = 0;
+    bool small = bi_get_u64(&s->z, &z64);
+    if (exact) {
+        info->exact_distribution = 1;
+        info->total_layouts = small ? z64 : 0;
+    }
+    bool enumerate = exact && small && z64 <= exact_limit;
+    if (!enumerate && sample_count == 0) {
+        info->reason = MS_REASON_SAMPLING_BUDGET_EXHAUSTED;
+        return PB_OK;
+    }
+
+    pb_gen gen;
+    pb_gen *g = &gen;
+    base_memset(g, 0, sizeof(*g));
+    g->s = s;
+    g->stop = MS_REASON_TIME_BUDGET_EXHAUSTED;
+    rt_rng_seed(&g->rng, seed ^ PB_POSTERIOR_STREAM);
+    rt_meter_init(&g->meter, s->clock, deadline_ms, RT_METER_INTERVAL);
+    pb_rc rc = rt_meter_check(&g->meter) ? PB_BUDGET : pb_gen_prepare(g);
+    uint32_t count = 0;
+    bool replaced = false;
+    if (rc == PB_OK && enumerate) {
+        double now = rt_clock_now(s->clock);
+        double until = sample_count > 0
+                           ? rt_deadline(now, deadline_ms - now, PB_ENUM_FRACTION)
+                           : deadline_ms;
+        rt_meter_init(&g->meter, s->clock, until, RT_METER_INTERVAL);
+        /* Past the deadline already (until < now): no enumeration at all. */
+        rc = now > until ? PB_BUDGET : pb_gen_rows(g, layouts, (uint32_t)z64, true, &count);
+        if (rc == PB_OK) {
+            info->exhaustive = 1;
+        } else if (rc == PB_BUDGET && sample_count > 0) {
+            /* Never a partial enumeration: its rows are overwritten by fresh
+             * uniform draws (the enumeration consumed no random numbers). */
+            replaced = true;
+            count = 0;
+            rt_meter_init(&g->meter, s->clock, deadline_ms, RT_METER_INTERVAL);
+            rc = rt_meter_check(&g->meter) ? PB_BUDGET
+                                           : pb_gen_rows(g, layouts, sample_count, false, &count);
+        } else {
+            count = 0;
+        }
+    } else if (rc == PB_OK) {
+        rc = pb_gen_rows(g, layouts, sample_count, false, &count);
+    }
+    if (rc == PB_BUDGET) {
+        info->reason = g->stop;
+    } else if (rc == PB_NOMEM) {
+        info->reason = MS_REASON_MEMORY_BUDGET_EXHAUSTED;
+    } else if (rc != PB_OK) {
+        return rc;
+    } else if (replaced) {
+        info->reason = MS_REASON_TIME_BUDGET_EXHAUSTED;
+    }
+    info->count = count;
+    return PB_OK;
+}
+
+/* One caller range for the disjointness checks; false when empty or
+ * wrapping (pb_range). */
+typedef struct pb_span {
+    uintptr_t start;
+    uintptr_t end;
+} pb_span;
+
+static bool pb_span_add(pb_span *spans, uint32_t *count, const void *ptr, size_t len) {
+    if (!pb_range(ptr, len, &spans[*count].start, &spans[*count].end)) return false;
+    (*count)++;
+    return true;
+}
+
+/* ms_solve's checks (pb_check_args) extended to the layouts and info
+ * outputs, all on addresses before any caller byte is read or written. */
+static ms_status pb_check_posterior_args(const void *obs, size_t obs_len,
+                                         const ms_infer_limits *limits, uint32_t exact_limit,
+                                         uint32_t sample_count, const rt_mem *workspace,
+                                         const rt_clock *clock, const void *result,
+                                         size_t result_len, const uint8_t *layouts,
+                                         size_t layouts_len, const ms_posterior_info *info) {
+    if (obs == NULL || limits == NULL || result == NULL || workspace == NULL || clock == NULL ||
+        info == NULL || (layouts == NULL && layouts_len != 0) || ((uintptr_t)obs & 7u) != 0 ||
+        ((uintptr_t)limits & 7u) != 0 || ((uintptr_t)result & 7u) != 0 ||
+        ((uintptr_t)info & 7u) != 0) {
+        return MS_ERR_INVALID_BUFFER;
+    }
+    pb_span spans[7];
+    uint32_t count = 0;
+    if (!pb_span_add(spans, &count, obs, obs_len) ||
+        !pb_span_add(spans, &count, limits, sizeof(*limits)) ||
+        !pb_span_add(spans, &count, result, result_len) ||
+        !pb_span_add(spans, &count, workspace, sizeof(*workspace)) ||
+        !pb_span_add(spans, &count, clock, sizeof(*clock)) ||
+        !pb_span_add(spans, &count, info, sizeof(*info)) ||
+        (layouts_len != 0 && !pb_span_add(spans, &count, layouts, layouts_len))) {
+        return MS_ERR_INVALID_BUFFER;
+    }
+    for (uint32_t a = 0; a < count; a++) {
+        for (uint32_t b = a + 1u; b < count; b++) {
+            if (pb_overlap(spans[a].start, spans[a].end, spans[b].start, spans[b].end)) {
+                return MS_ERR_INVALID_BUFFER;
+            }
+        }
+    }
+    if (limits->magic != MS_MAGIC_LIMITS || limits->version != MS_ABI_VERSION) {
+        return MS_ERR_INVALID_BUFFER;
+    }
+    ms_status status = ms_obs_validate(obs, obs_len);
+    if (status != MS_OK) return status;
+    const ms_obs_header *h = (const ms_obs_header *)obs;
+    if (result_len != ms_result_size(h->width, h->height)) return MS_ERR_INVALID_BUFFER;
+    size_t capacity = exact_limit > sample_count ? exact_limit : sample_count;
+    size_t needed;
+    if (!rt_mul_size(capacity, (size_t)h->width * h->height, &needed) || layouts_len != needed) {
+        return MS_ERR_INVALID_BUFFER;
+    }
+    return ms_limits_validate(limits);
+}
+
+ms_status ms_posterior_generate(const void *obs, size_t obs_len, const ms_infer_limits *limits,
+                                uint32_t exact_limit, uint32_t sample_count, rt_mem *workspace,
+                                rt_clock *clock, void *prob_result, size_t prob_result_len,
+                                uint8_t *layouts, size_t layouts_len, ms_posterior_info *info) {
+    ms_status status = pb_check_posterior_args(obs, obs_len, limits, exact_limit, sample_count,
+                                               workspace, clock, prob_result, prob_result_len,
+                                               layouts, layouts_len, info);
+    if (status != MS_OK) return status;
+    status = pb_quick_contradictions((const ms_obs_header *)obs, ms_obs_clues(obs));
+    if (status != MS_OK) return status;
+
+    pb_solver solver;
+    pb_entry entry;
+    pb_open(&solver, obs, limits, workspace, clock,
+            limits->time_budget_ms * MS_POSTERIOR_INFER_FRACTION, &entry);
+    double deadline_ms = rt_deadline(solver.start_ms, limits->time_budget_ms, 1.0);
+    uint64_t seed = (limits->flags & MS_LIMIT_EXPLICIT_SEED) ? limits->seed : entry.hash;
+    ms_posterior_info out;
+    base_memset(&out, 0, sizeof(out));
+    pb_rc rc = pb_run(&solver);
+    if (rc == PB_OK) rc = pb_finish(&solver, prob_result, entry.hash);
+    if (rc == PB_OK) {
+        rc = pb_posterior(&solver, seed, exact_limit, sample_count, deadline_ms, prob_result,
+                          layouts, &out);
+    }
+    status = pb_close(&solver, &entry, rc);
+    if (status != MS_OK) return status;
+    size_t used = (size_t)out.count * solver.n;
+    if (layouts_len > used) base_memset(layouts + used, 0, layouts_len - used);
+    base_memcpy(info, &out, sizeof(out));
+    return MS_OK;
 }

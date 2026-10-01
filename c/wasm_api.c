@@ -1,11 +1,12 @@
 /*
  * wasm_api.c - the production WebAssembly reactor: the exports of
- * wasm_api.h around the engine service (engine.c) and the solver
- * (ms_solve). Built for wasm32 only, with PLATFORM_SKIP_ENTRY and
- * --no-entry; JS calls ms_init exactly once per instance.
+ * wasm_api.h around the engine service (engine.c), the solver (ms_solve)
+ * and the move advisor (ms_plan). Built for wasm32 only, with
+ * PLATFORM_SKIP_ENTRY and --no-entry; JS calls ms_init exactly once per
+ * instance.
  *
  * Host buffers live in their own rt_mem (buffer_mem), separate from the
- * engine's games/results (engine_mem) and the solver workspace
+ * engine's games/results (engine_mem) and the solver/planner workspace
  * (solver_mem). Every pointer from JS is resolved through the host-buffer
  * table of wasm_buffers.h before anything else happens and without reading
  * caller memory (registered requested bytes, confirmed by the allocator's
@@ -27,10 +28,15 @@ __attribute__((import_module("ms_host"), import_name("now_ms"))) double ms_host_
 static bool initialized;
 static rt_mem buffer_mem; /* ms_alloc buffers */
 static rt_mem engine_mem; /* the engine's games and stored result */
-static rt_mem solver_mem; /* ms_solve workspace, reset after every call */
+static rt_mem solver_mem; /* ms_solve/ms_plan workspace, reset after every call */
 static rt_clock host_clock;
 static ms_engine engine;
 static ms_host_table host;
+
+/* ms_check_plan's fresh observation of the current game: static, so the
+ * check never allocates (games are at most MS_GAME_MAX_CELLS cells). */
+#define CHECK_OBS_BYTES ((sizeof(ms_obs_header) + MS_GAME_MAX_CELLS + 7u) & ~(size_t)7u)
+static uint64_t check_obs[CHECK_OBS_BYTES / sizeof(uint64_t)];
 
 static double read_host_clock(void *ctx) {
     (void)ctx;
@@ -216,4 +222,49 @@ int32_t MS_WASM_EXPORT(ms_solve_observation)(uint32_t obs, uint32_t obs_len, uin
      * error so every solve starts from an empty, clean context. */
     rt_mem_reset(&solver_mem);
     return status;
+}
+
+/* ======================================================================
+ * Move advisor
+ * ====================================================================== */
+
+int32_t MS_WASM_EXPORT(ms_init_plan_limits)(uint32_t limits, uint32_t limits_len) {
+    if (!initialized) return MS_ERR_INTERNAL;
+    void *out = span(limits, limits_len, 8);
+    if (out == NULL || limits_len != MS_WASM_PLAN_LIMITS_BYTES) return MS_ERR_INVALID_BUFFER;
+    ms_plan_limits_default((ms_plan_limits *)out);
+    return MS_OK;
+}
+
+int32_t MS_WASM_EXPORT(ms_plan_observation)(uint32_t obs, uint32_t obs_len, uint32_t limits,
+                                            uint32_t limits_len, uint32_t result,
+                                            uint32_t result_len) {
+    if (!initialized) return MS_ERR_INTERNAL;
+    /* Owned, aligned, fixed-size and pairwise disjoint before the planner
+     * reads its inputs or writes its result, exactly as for a solve. */
+    void *in = NULL, *policy = NULL, *out = NULL;
+    if (ms_host_plan_spans(&host, obs, obs_len, limits, limits_len, result, result_len, &in,
+                           &policy, &out) != MS_OK) {
+        return MS_ERR_INVALID_BUFFER;
+    }
+    ms_status status = ms_plan(in, obs_len, (const ms_plan_limits *)policy, &solver_mem,
+                               &host_clock, (ms_plan_result *)out, result_len);
+    /* Every plan, successful or not, starts the next solve or plan from an
+     * empty workspace with no sticky error. */
+    rt_mem_reset(&solver_mem);
+    return status;
+}
+
+int32_t MS_WASM_EXPORT(ms_check_plan)(uint32_t generation, uint32_t revision, uint32_t plan,
+                                      uint32_t plan_len) {
+    if (!initialized) return MS_ERR_INTERNAL;
+    const void *in = span(plan, plan_len, 8);
+    if (in == NULL || plan_len != MS_WASM_PLAN_RESULT_BYTES) return MS_ERR_INVALID_BUFFER;
+    size_t obs_len = ms_obs_size(engine.width, engine.height);
+    if (obs_len > sizeof(check_obs)) return MS_ERR_INTERNAL;
+    /* Revision, game status and length checks of ms_get_observation; with no
+     * game yet the revision check fails first. */
+    ms_status status = ms_engine_observe(&engine, generation, revision, check_obs, obs_len);
+    if (status != MS_OK) return status;
+    return ms_plan_result_validate(check_obs, obs_len, (const ms_plan_result *)in, plan_len);
 }

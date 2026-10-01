@@ -95,6 +95,42 @@ for (const font of ['default', 'monospace']) {
   });
 }
 
+// The real move advisor after autosolve pauses (seed 8): neither the marker
+// nor the advice text below the board may move the board, in any font.
+for (const font of ['default', 'monospace']) {
+  test(`move advice and its wrapping text do not move the board (${font})`, async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 800 });
+    await fixEntropy(page, 8);
+    await openApp(page);
+    await enableAutosolve(page);
+    const box = page.locator('#advice');
+    await box.evaluate((node, font) => {
+      if (font === 'monospace') node.style.fontFamily = font;
+    }, font);
+    const before = await revealAndMeasure(page, 40);
+    const cellBox = await cell(page, 40).boundingBox();
+    await expect(page.locator('#autosolve-status')).toHaveText(/^Your move:/, { timeout: 20000 });
+    await expect(box).toHaveAttribute('data-state', /^(exact|estimated)$/, { timeout: 20000 });
+    await expect(page.locator('#board .cell.is-advised')).toHaveCount(1);
+    expect(await boardGeometry(page)).toEqual(before);
+    expect(await cell(page, 40).boundingBox(), 'cells keep their place and size').toEqual(cellBox);
+    const marked = await page.locator('#board .cell.is-advised').boundingBox();
+    expect([marked.width, marked.height], 'the marker adds no size').toEqual([cellBox.width, cellBox.height]);
+    // Narrow the advice to half its rendered width (derived from this
+    // browser's own text layout, no font-specific threshold): it wraps onto
+    // more lines below the board, which must stay where it is.
+    const [open, narrow] = await box.evaluate((node) => {
+      const height = node.getBoundingClientRect().height;
+      node.style.width = `${Math.ceil(node.getBoundingClientRect().width / 2)}px`;
+      return [height, node.getBoundingClientRect().height];
+    });
+    expect(narrow).toBeGreaterThan(open);
+    expect(await boardGeometry(page)).toEqual(before);
+    const banner = await box.boundingBox();
+    expect(banner.y).toBeGreaterThanOrEqual(before.frame.y + before.frame.height);
+  });
+}
+
 test('a win preserves the position and scroll offsets of a large board', async ({ page }) => {
   await openApp(page);
   await startCustom(page, 80, 80, 6391);

@@ -17,7 +17,8 @@
 //                 dist/, then checks that dist/ holds exactly the registered
 //                 release files (STATIC_FILES) and every site reference
 //
-// Suites: runtime, bigint, game, probability, autosolve, api (default: all).
+// Suites: runtime, bigint, game, probability, posterior, planner, autosolve,
+// api (default: all).
 // A suite is compiled in together with exactly the sources listed in SUITES,
 // so a subset builds while other modules are unfinished. The default (all
 // suites), the production reactor and dist need every source and fail with
@@ -83,6 +84,17 @@ export const SUITES = {
     test: 'tests/c/test_probability.c',
     sources: ['c/runtime.c', 'c/bigint.c', 'c/probability.c'],
   },
+  // Complete-layout posterior generation (ms_posterior_generate, c/posterior.h),
+  // which reuses the solver's counting and sampling in c/probability.c.
+  posterior: {
+    test: 'tests/c/test_posterior.c',
+    sources: ['c/runtime.c', 'c/bigint.c', 'c/probability.c'],
+  },
+  // Move advisor (ms_plan, c/planner.h) over posterior layouts.
+  planner: {
+    test: 'tests/c/test_planner.c',
+    sources: ['c/runtime.c', 'c/bigint.c', 'c/probability.c', 'c/planner.c'],
+  },
   // Integration: real solver results feeding atomic autosolve batches.
   autosolve: {
     test: 'tests/c/test_autosolve.c',
@@ -98,7 +110,7 @@ const RUNNER = 'tests/c/main.c';
 const SMOKE_SOURCE = 'tests/c/reactor_smoke.c';
 // The production reactor compiles every c/*.c file; all of these must exist.
 export const ENGINE_SOURCES = ['c/runtime.c', 'c/bigint.c', 'c/game.c', 'c/probability.c',
-  'c/engine.c', 'c/wasm_api.c'];
+  'c/planner.c', 'c/engine.c', 'c/wasm_api.c'];
 // memset/memcpy forwarding to corec's base_mem*, linked only into the Windows
 // native build (see the file): the one project file that may define them, and
 // never part of the reactor.
@@ -142,6 +154,9 @@ const WASM_REACTOR_LINK = [...WASM_LINK_COMMON];
 
 // The application host boundary (engine.h, "Reactor ABI rules").
 export const HOST_IMPORTS = new Set(['ms_host.now_ms']);
+// The move advisor's additive exports (wasm_api.h): the production reactor
+// must declare each of them, like engine.h's ms_abi_version and ms_init.
+export const PLANNER_EXPORTS = ['ms_init_plan_limits', 'ms_plan_observation', 'ms_check_plan'];
 // Exported by corec's platform_wasm.c itself; JS never uses them.
 export const COREC_WASM_EXPORTS = ['wasm_buddy_alloc', 'wasm_buddy_free'];
 
@@ -753,6 +768,9 @@ export function productionExports() {
   const parsed = parseExportDeclarations(readFileSync(join(ROOT, WASM_API_HEADER), 'utf8'),
     readFileSync(join(ROOT, WASM_API_SOURCE), 'utf8'));
   problems.push(...parsed.problems);
+  for (const name of PLANNER_EXPORTS) {
+    if (!parsed.names.includes(name)) problems.push(`required export ${name} (move advisor) is not declared`);
+  }
   if (problems.length) fail(`reactor export declarations:\n  ${problems.join('\n  ')}`);
   return parsed.names;
 }

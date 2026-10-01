@@ -1,7 +1,8 @@
-// Test-only construction of solver results with a chosen content, used to
-// make odds and autosolve scenarios deterministic, and of engine modules
-// that load but cannot start. forgeResult is self-contained (no imports or
-// closures): the browser tests inline its source into a patched worker with
+// Test-only construction of solver results and move-advice plans with a
+// chosen content, used to make odds, autosolve and advice scenarios
+// deterministic, and of engine modules that load but cannot start.
+// forgeResult and forgePlan are self-contained (no imports or closures): the
+// browser tests inline their source into a patched worker with
 // Function.prototype.toString.
 
 /*
@@ -72,6 +73,80 @@ export function forgeResult(resultBuffer, observationBuffer, spec) {
   dv.setUint32(88, safe, true);
   dv.setUint32(92, mines, true);
   dv.setFloat64(104, 1.25, true);
+  return out;
+}
+
+/*
+ * Builds a move-advice plan (ms_plan_result, 112 bytes) for the observation
+ * the worker was asked about, keeping the real plan's header (magic,
+ * version, dimensions, mine total, revealed count and observation hash) so
+ * the game instance's ms_check_plan still applies in full:
+ *   { status: 'exact', wins, total, survival, cell, candidates }  complete
+ *                     search; candidates default to the fewest the planner
+ *                     can report, hidden cells minus mines plus one
+ *   { status: 'estimated', win, se, trials, incomplete, survival, cell }
+ *   { status: 'none' | 'unavailable', reason }             no suggestion
+ * cell defaults to the lowest hidden cell not listed in `avoid`;
+ * { corrupt: 'hash' } names another observation (C refuses it).
+ */
+export function forgePlan(planBuffer, observationBuffer, spec) {
+  const PLAN_SIZE = 112;
+  const NO_CELL = 0xFFFFFFFF;
+  const out = new ArrayBuffer(PLAN_SIZE);
+  const bytes = new Uint8Array(out);
+  bytes.set(new Uint8Array(planBuffer, 0, 40));
+  const dv = new DataView(out);
+  const obs = new Uint8Array(observationBuffer);
+  const width = new DataView(observationBuffer).getUint32(8, true);
+  const height = new DataView(observationBuffer).getUint32(12, true);
+  const mines = new DataView(observationBuffer).getUint32(16, true);
+  let hidden = 0;
+  for (let i = 0; i < width * height; i++) hidden += obs[32 + i] === 0xFF ? 1 : 0;
+  const avoid = new Set(spec.avoid || []);
+  let cell = spec.cell;
+  if (cell === undefined) {
+    cell = NO_CELL;
+    for (let i = 0; i < width * height; i++) {
+      if (obs[32 + i] === 0xFF && !avoid.has(i)) {
+        cell = i;
+        break;
+      }
+    }
+  }
+  const status = { none: 0, exact: 1, estimated: 2, unavailable: 3 }[spec.status];
+  const reasons = { certain_moves: 1, finished: 2, no_samples: 3, budget: 4, insufficient_rollouts: 5,
+    posterior_unavailable: 6, not_started: 7 };
+  const set = (offset, value) => dv.setUint32(offset, value, true);
+  set(8, status);
+  set(12, spec.reason ? reasons[spec.reason] : 0);
+  if (status === 1) {
+    const total = spec.total ?? 4;
+    const wins = spec.wins ?? 3;
+    set(40, cell);
+    set(44, spec.candidates ?? hidden - mines + 1);
+    set(48, total);
+    set(60, spec.nodes ?? 57);
+    set(64, 1);
+    dv.setFloat64(72, spec.survival ?? 0.75, true);
+    dv.setFloat64(80, wins / total, true);
+    dv.setFloat64(96, 3.5, true);
+    set(104, wins);
+    set(108, total);
+  } else if (status === 2) {
+    set(40, cell);
+    set(44, spec.candidates ?? 4);
+    set(48, spec.layouts ?? 96);
+    set(52, spec.trials ?? 32);
+    set(56, spec.incomplete ?? 0);
+    dv.setFloat64(72, spec.survival ?? 0.7, true);
+    dv.setFloat64(80, spec.win ?? 0.5, true);
+    dv.setFloat64(88, spec.se ?? 0.05, true);
+    dv.setFloat64(96, 900, true);
+  } else {
+    set(40, NO_CELL);
+    dv.setFloat64(96, 2, true);
+  }
+  if (spec.corrupt === 'hash') dv.setUint32(32, dv.getUint32(32, true) ^ 1, true);
   return out;
 }
 

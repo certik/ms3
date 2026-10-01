@@ -12,6 +12,14 @@
  * only drawn when they belong to the game AND revision on screen, and every
  * odds request carries a generation number so late answers are ignored even
  * if cancelling the solver came too late.
+ *
+ * Move advice follows the same rules. Once the odds for the position on
+ * screen are shown and nothing certain is left to play (no proven-safe cell
+ * to open, no autosolve batch pending), the same worker plans the next
+ * reveal (engine-client.js recommendation()). The suggestion is drawn as a
+ * marker on one cell and explained below the board; it disappears with any
+ * change of position, game or odds mode, and it is only ever shown: neither
+ * autosolve nor anything else plays it.
  */
 import { EngineClient, EngineError } from './engine-client.js';
 
@@ -54,8 +62,10 @@ import { EngineClient, EngineError } from './engine-client.js';
     mine: svgIcon('i-mine'),
     cornerFlag: svgIcon('i-flag', 'corner-flag'),
     provenSafe: svgIcon('i-check', 'odds-icon'),
-    provenMine: svgIcon('i-mine', 'odds-icon')
+    provenMine: svgIcon('i-mine', 'odds-icon'),
+    advice: svgIcon('i-target', 'advice-icon')
   };
+  const PLAN_STATUSES = ['exact', 'estimated', 'unavailable', 'none'];
 
   // --------------------------------------------------------------------- state
 
@@ -94,6 +104,16 @@ import { EngineClient, EngineError } from './engine-client.js';
       error: null,
       discardedKey: null,
       announceNext: false
+    },
+    // Move advice for the position on screen (same keys as the odds).
+    advice: {
+      gen: 0, // bumped whenever an in-flight request becomes obsolete
+      requestKey: null,
+      startedAt: 0,
+      ticker: 0,
+      data: null, // parsed plan valid for dataKey only
+      dataKey: null,
+      error: null // { key, message }: shown with Retry advice, never retried by itself
     }
   };
 
@@ -477,6 +497,7 @@ import { EngineClient, EngineError } from './engine-client.js';
     app.engine.fatal = true;
     setEngineState('error', err);
     cancelOddsRequest();
+    clearAdvice();
     updateTimer();
     if (!game) {
       app.loadError = {
@@ -999,7 +1020,14 @@ import { EngineClient, EngineError } from './engine-client.js';
     return false;
   }
 
+  // Schedules the next certain batch, then lets move advice follow once
+  // nothing certain is pending.
   function syncAutosolve() {
+    scheduleAutosolve();
+    syncAdvice();
+  }
+
+  function scheduleAutosolve() {
     renderAutosolve();
     const auto = app.autosolve;
     const game = app.game;
@@ -1011,7 +1039,10 @@ import { EngineClient, EngineError } from './engine-client.js';
       auto.timer = 0;
       const latest = currentOdds();
       if (!auto.enabled || !latest || oddsKey(app.game) !== key || app.engine.fatal ||
-          !hasAutomaticMoves(app.game, latest)) return;
+          !hasAutomaticMoves(app.game, latest)) {
+        syncAdvice();
+        return;
+      }
       // A no-op or failed batch must not become a same-revision request loop.
       auto.attemptedKey = key;
       sendAction('autosolve');
@@ -1149,6 +1180,7 @@ import { EngineClient, EngineError } from './engine-client.js';
     cancelOddsRequest();
     app.odds.data = null;
     app.odds.dataKey = null;
+    clearAdvice();
   }
 
   function resetOdds() {
@@ -1157,10 +1189,17 @@ import { EngineClient, EngineError } from './engine-client.js';
     app.odds.cache = null;
     app.odds.error = null;
     app.odds.discardedKey = null;
+    app.advice.error = null;
   }
 
-  // Make the odds match the position on screen: reuse, request or cancel.
+  // Make the odds, and then the move advice, match the position on screen.
   function syncOdds() {
+    syncOddsData();
+    syncAdvice();
+  }
+
+  // Reuse, request or cancel the odds for the position on screen.
+  function syncOddsData() {
     const o = app.odds;
     const game = app.game;
     if (!o.enabled || !game || app.engine.fatal || app.pendingStart || game.status !== 'playing') {
@@ -1191,9 +1230,13 @@ import { EngineClient, EngineError } from './engine-client.js';
     requestOdds(game, key);
   }
 
-  async function requestOdds(game, key) {
+  // fresh: solve again even when the engine holds reusable odds for the
+  // position (recalculateOdds only, never automatic).
+  async function requestOdds(game, key, fresh) {
     const o = app.odds;
     cancelOddsRequest();
+    // Odds first: any advice for this position waits for them.
+    clearAdvice();
     const gen = ++o.gen;
     o.requestKey = key;
     o.startedAt = performance.now();
@@ -1201,8 +1244,9 @@ import { EngineClient, EngineError } from './engine-client.js';
     renderOddsPanel();
     let data = null;
     let error = null;
+    const routing = { generation: game.generation, revision: game.revision };
     try {
-      data = await engine.odds({ generation: game.generation, revision: game.revision });
+      data = await (fresh ? engine.recalculateOdds(routing) : engine.odds(routing));
     } catch (err) {
       error = err;
     }
@@ -1343,6 +1387,409 @@ import { EngineClient, EngineError } from './engine-client.js';
     }
   }
 
+  // ---------------------------------------------------------------- advice
+
+  // Proven-safe cells still to open: certain moves come before any advice.
+  function hasProvenReveals(game, data) {
+    for (const index of data.safe) {
+      if (!game.cells[index].revealed) return true;
+    }
+    return false;
+  }
+
+  // Advice is wanted for the position on screen once its odds are shown
+  // (exact or estimated), nothing certain is left to play and no autosolve
+  // batch is pending: before the first reveal, after the game, without odds
+  // or with certain moves left there is none.
+  function adviceWanted(game, data) {
+    if (!app.odds.enabled || !game || !data || app.engine.fatal || app.pendingStart) return false;
+    if (game.status !== 'playing') return false;
+    if (data.status !== 'exact' && data.status !== 'approximate') return false;
+    if (app.autosolve.timer || hasProvenReveals(game, data)) return false;
+    return !(app.autosolve.enabled && hasAutomaticMoves(game, data));
+  }
+
+  // The advice valid for the position on screen, or null.
+  function currentAdvice() {
+    const a = app.advice;
+    const game = app.game;
+    if (!a.data || !game || a.dataKey !== oddsKey(game) || !adviceWanted(game, currentOdds())) return null;
+    if (a.data.gameId !== game.id || a.data.revision !== game.revision) return null;
+    return a.data;
+  }
+
+  // The recommended cell to mark, or -1.
+  function advisedIndex(advice) {
+    return advice && (advice.status === 'exact' || advice.status === 'estimated') ? advice.cell : -1;
+  }
+
+  function cancelAdviceRequest() {
+    const a = app.advice;
+    a.gen++; // late answers from the old request are ignored even if cancelling came too late
+    a.requestKey = null;
+    stopAdviceTicker();
+    engine.cancelRecommendation();
+  }
+
+  // Drops the advice of the position on screen (a move, new game, odds off,
+  // engine failure or a new odds request). Errors stay keyed to their
+  // position, so they never reappear elsewhere.
+  function clearAdvice() {
+    cancelAdviceRequest();
+    app.advice.data = null;
+    app.advice.dataKey = null;
+    renderAdvice();
+  }
+
+  // Make the advice match the position on screen: keep, request or drop.
+  // Never retried by itself: a failed or empty answer stays for its
+  // position until the player retries or the position changes.
+  function syncAdvice() {
+    const a = app.advice;
+    const game = app.game;
+    if (!adviceWanted(game, currentOdds())) {
+      if (a.requestKey || a.data) {
+        const shown = advisedIndex(a.data) >= 0;
+        clearAdvice();
+        if (shown) {
+          renderBoard();
+          renderInspector();
+        }
+      } else {
+        renderAdvice();
+      }
+      return;
+    }
+    const key = oddsKey(game);
+    if (a.dataKey === key || a.requestKey === key || (a.error && a.error.key === key)) {
+      renderAdvice();
+      return;
+    }
+    requestAdvice(game, key);
+  }
+
+  async function requestAdvice(game, key) {
+    const a = app.advice;
+    cancelAdviceRequest();
+    a.data = null;
+    a.dataKey = null;
+    const gen = ++a.gen;
+    a.requestKey = key;
+    a.startedAt = performance.now();
+    startAdviceTicker();
+    renderAdvice();
+    let plan = null;
+    let error = null;
+    try {
+      plan = await engine.recommendation({ generation: game.generation, revision: game.revision });
+    } catch (err) {
+      error = err;
+    }
+    if (gen !== a.gen) return; // the position, the odds or the mode changed meanwhile
+    a.requestKey = null;
+    stopAdviceTicker();
+    const current = app.game;
+    if (!current || oddsKey(current) !== key || !adviceWanted(current, currentOdds())) {
+      renderAdvice();
+      return;
+    }
+    if (error) {
+      if (isFatal(error)) {
+        engineFailed(error);
+        if (!isEngineError(error)) throw error;
+        return;
+      }
+      if (error.kind === 'conflict') {
+        handleAdviceConflict(error, key);
+        return;
+      }
+      a.error = { key: key, message: adviceErrorText(error) };
+      renderAdvice();
+      return;
+    }
+    const parsed = parsePlan(plan, current, currentOdds());
+    if (!parsed) {
+      a.error = { key: key, message: 'The move advisor sent a suggestion this page cannot use, so none is shown.' };
+      renderAdvice();
+      return;
+    }
+    a.data = parsed;
+    a.dataKey = key;
+    renderBoard();
+    renderInspector();
+    renderAdvice();
+    announceAdvice(parsed, current);
+  }
+
+  // Strict check of the advice payload against the board on screen: it
+  // must name this game and revision, and a suggestion must point at a
+  // hidden cell that is not a proven mine. Nothing is patched.
+  function parsePlan(raw, game, odds) {
+    if (!isPlainObject(raw) || PLAN_STATUSES.indexOf(raw.status) < 0) return null;
+    if (raw.game_id !== game.id || raw.generation !== game.generation || raw.revision !== game.revision) return null;
+    if (raw.reason !== null && (typeof raw.reason !== 'string' || !raw.reason)) return null;
+    const counts = ['candidates', 'layouts', 'trials', 'incomplete', 'search_nodes'];
+    for (let k = 0; k < counts.length; k++) {
+      if (!isInt(raw[counts[k]]) || raw[counts[k]] < 0) return null;
+    }
+    if (raw.incomplete > raw.trials || !isNum(raw.elapsed_ms) || raw.elapsed_ms < 0 || !isBool(raw.posterior_exact)) {
+      return null;
+    }
+    const plan = {
+      gameId: raw.game_id,
+      revision: raw.revision,
+      status: raw.status,
+      reason: raw.reason,
+      cell: -1,
+      survival: null,
+      win: null,
+      standardError: null,
+      trials: raw.trials,
+      incomplete: raw.incomplete,
+      layouts: raw.layouts,
+      candidates: raw.candidates,
+      posteriorExact: raw.posterior_exact,
+      exactWins: null,
+      exactTotal: null,
+      wins: null, // rollout rounds won (estimated)
+      elapsedMs: raw.elapsed_ms
+    };
+    if (raw.status !== 'exact' && raw.status !== 'estimated') {
+      return raw.cell === null ? plan : null;
+    }
+    const cell = raw.cell;
+    if (!isInt(cell) || cell < 0 || cell >= game.cells.length || game.cells[cell].revealed) return null;
+    if (odds && odds.mines.has(cell)) return null;
+    const unit = function (value) { return isNum(value) && value >= 0 && value <= 1; };
+    if (!unit(raw.survival_probability) || !unit(raw.win_probability)) return null;
+    if (!isNum(raw.standard_error) || raw.standard_error < 0) return null;
+    if (raw.status === 'exact') {
+      if (!isInt(raw.exact_wins) || !isInt(raw.exact_total) || raw.exact_total < 1 || raw.exact_wins < 0 ||
+          raw.exact_wins > raw.exact_total || raw.rollout_wins !== null) return null;
+      plan.exactWins = raw.exact_wins;
+      plan.exactTotal = raw.exact_total;
+    } else if (raw.exact_wins !== null || raw.exact_total !== null || !isInt(raw.rollout_wins) ||
+        raw.rollout_wins < 0 || raw.rollout_wins > raw.trials - raw.incomplete) {
+      return null;
+    } else {
+      plan.wins = raw.rollout_wins;
+    }
+    plan.cell = cell;
+    plan.survival = raw.survival_probability;
+    plan.win = raw.win_probability;
+    plan.standardError = raw.standard_error;
+    return plan;
+  }
+
+  // Advice failures never affect the game or its odds: shown with Retry advice.
+  function adviceErrorText(err) {
+    if (err.kind === 'aborted') return 'The move advice was cancelled. Retry advice, or keep playing.';
+    let text = describeError(err);
+    if (err.code === 'trap') text = 'The move advisor stopped unexpectedly.';
+    else if (err.code === 'solver_timeout') text = 'The move advisor did not finish in time.';
+    return text + ' Your game and its odds are not affected.';
+  }
+
+  function handleAdviceConflict(error, key) {
+    const current = app.game;
+    const latest = error.state ? parseGame(error.state) : null;
+    if (latest && current && latest.id === current.id &&
+        (latest.revision !== current.revision || latest.status !== current.status)) {
+      adoptGame(latest);
+      return;
+    }
+    app.advice.error = { key: key, message: describeError(error) };
+    renderAdvice();
+  }
+
+  // Retry advice: after an error, or for an unavailable answer, which is
+  // dropped here and never reused by the engine client, so this plans anew.
+  function retryAdvice() {
+    const a = app.advice;
+    a.error = null;
+    if (a.data && a.data.status === 'unavailable') {
+      a.data = null;
+      a.dataKey = null;
+    }
+    syncAdvice();
+  }
+
+  // Recalculate odds: when the advisor found a cell that is safe in every
+  // layout but the cached (sampled) odds proved none, solve the position
+  // again in full. Any proof it finds is shown, and played only by
+  // autosolve, which plays nothing but proofs; advice is never played.
+  function recalculateOdds() {
+    const o = app.odds;
+    const game = app.game;
+    if (!o.enabled || !game || game.status !== 'playing' || app.engine.fatal || app.pendingStart) return;
+    const key = oddsKey(game);
+    cancelAutosolve();
+    app.autosolve.attemptedKey = null;
+    o.error = null;
+    o.discardedKey = null;
+    o.data = null;
+    o.dataKey = null;
+    if (o.cache && o.cache.key === key) o.cache = null;
+    o.announceNext = true;
+    renderBoard();
+    renderInspector();
+    requestOdds(game, key, true);
+  }
+
+  function startAdviceTicker() {
+    stopAdviceTicker();
+    app.advice.ticker = setInterval(renderAdvice, 1000);
+  }
+
+  function stopAdviceTicker() {
+    if (app.advice.ticker) {
+      clearInterval(app.advice.ticker);
+      app.advice.ticker = 0;
+    }
+  }
+
+  function announceAdvice(plan, game) {
+    if (plan.status !== 'exact' && plan.status !== 'estimated') return;
+    const where = positionText(plan.cell, game.width);
+    announce((plan.status === 'exact' ? 'Best next move, exact: ' : 'Suggested next move, estimated: ') + where + '.' +
+      (game.cells[plan.cell].flagged ? ' That cell is flagged; remove the flag to reveal it.' : ''));
+  }
+
+  // Win chances are whole percents; anything strictly between 0 and 1 is
+  // never rounded to a certainty.
+  function chanceText(p) {
+    const pct = p * 100;
+    if (pct > 0 && pct < 1) return '<1%';
+    if (pct > 99 && pct < 100) return '>99%';
+    return Math.round(pct) + '%';
+  }
+
+  // The suggested cell's mine risk as the odds overlay shows it.
+  function adviceRiskText(odds, index) {
+    const info = odds ? cellOddsInfo(odds, index) : null;
+    if (!info || info.kind !== 'value') return '';
+    return info.estimated ? 'Mine risk ' + info.text + ' (estimated odds).' : 'Mine risk ' + info.text + ' (exact odds).';
+  }
+
+  function winChanceText(plan, odds) {
+    if (plan.status === 'exact') {
+      return 'Chance to win with best play from here: ' + chanceText(plan.win) + ' (exact: wins in ' +
+        formatCount(plan.exactWins) + ' of ' + plural(plan.exactTotal, 'possible layout') + ').';
+    }
+    // Rollouts: the counts are facts, a percentage is only an estimate.
+    const finished = plan.trials - plan.incomplete;
+    const games = plural(finished, 'simulated game');
+    // A round cut off by the time budget leaves the finished ones biased
+    // toward short games: their outcome is no overall chance to win.
+    if (plan.incomplete > 0) {
+      return 'Simulated games: ' + formatCount(plan.wins) + ' of the ' + formatCount(finished) +
+        ' that finished were won, and ' + formatCount(plan.incomplete) + ' more ran out of time, so no ' +
+        'overall chance to win is given.';
+    }
+    // No percentage at either end: a sample never shows certainty.
+    if (plan.wins === finished) {
+      return 'All ' + games + ' were won. That does not make winning certain, so no chance to win is given.';
+    }
+    if (plan.wins === 0) {
+      return 'None of the ' + games + ' was won. That does not make winning impossible, so no chance to win ' +
+        'is given.';
+    }
+    // A zero standard error means one game on each listed layout: the
+    // advisor's own play, exactly counted, with no claim that it is optimal.
+    if (!(plan.standardError > 0)) {
+      return 'Chance to win with the advisor\'s own play: ' + chanceText(plan.win) + ', from ' +
+        plural(plan.wins, 'win') + ' in ' + games + ', one on each possible layout (other play could win more ' +
+        'often).';
+    }
+    const error = plan.standardError * 100;
+    const spread = error < 0.5 ? 'under 1 point' : plural(Math.round(error), 'point');
+    let text = 'Estimated chance to win: about ' + chanceText(plan.win) + ', from ' + plural(plan.wins, 'win') +
+      ' in ' + games + ' (standard error ' + spread + ': a sampling diagnostic, not a guaranteed bound).';
+    // Finite samples can put the estimate above the cell's chance of being
+    // safe, which no real chance to win can exceed.
+    const p = odds ? odds.probabilities[plan.cell] : null;
+    if (isNum(p) && plan.win > 1 - p + 1e-9) {
+      text += ' It is above this cell\'s chance of being safe only because of sampling noise.';
+    }
+    return text;
+  }
+
+  const PLAN_REASON_TEXT = {
+    certain_moves: 'some cell is safe in every layout that fits the clues, so no guess should be needed, but ' +
+      'the odds shown did not prove which one in time',
+    finished: 'there is nothing left to open',
+    not_started: 'the game has not started',
+    no_samples: 'no layouts that fit the clues could be generated',
+    budget: 'the search ran out of its time or memory budget before it could compare cells',
+    insufficient_rollouts: 'the simulated games gave too little evidence to compare cells: too few finished in ' +
+      'time, or the move won none of them, which does not make winning impossible',
+    posterior_unavailable: 'the layouts that fit the clues could not be generated in time'
+  };
+
+  function renderAdvice() {
+    if (!el.advice) return;
+    const a = app.advice;
+    const game = app.game;
+    const odds = currentOdds();
+    const wanted = adviceWanted(game, odds);
+    const key = game ? oddsKey(game) : null;
+    let state = 'off';
+    let title = '';
+    let detail = '';
+    let action = ''; // the button below the text: 'advice' (Retry advice) or 'odds' (Recalculate odds)
+    const plan = wanted ? currentAdvice() : null;
+    if (!wanted) {
+      state = 'off';
+    } else if (a.requestKey === key) {
+      state = 'loading';
+      title = 'Looking for a good next move...';
+      const seconds = Math.floor((performance.now() - a.startedAt) / 1000);
+      detail = 'The odds are final; you can keep playing. A suggestion appears here when it is ready' +
+        (seconds >= 2 ? ' (still working, ' + seconds + ' s).' : '.');
+    } else if (a.error && a.error.key === key) {
+      state = 'error';
+      title = 'No move advice';
+      detail = a.error.message;
+      action = 'advice';
+    } else if (plan && (plan.status === 'exact' || plan.status === 'estimated')) {
+      const cell = game.cells[plan.cell];
+      const where = positionText(plan.cell, game.width);
+      state = plan.status;
+      title = (plan.status === 'exact' ? 'Best next move (exact): ' : 'Suggested next move (estimate): ') + where + '.';
+      const parts = [];
+      if (cell.flagged) parts.push('It is flagged: remove your flag first to reveal it.');
+      const risk = adviceRiskText(odds, plan.cell);
+      if (risk) parts.push(risk);
+      parts.push(winChanceText(plan, odds));
+      parts.push(plan.status === 'exact'
+        ? 'Found by searching every layout that fits the clues; the best move is not always the lowest-risk cell.'
+        : 'Picked by simulating whole games on layouts sampled to fit the clues: an estimate, not a guarantee.');
+      detail = parts.join(' ');
+    } else if (plan) {
+      state = plan.status;
+      title = 'No suggestion for this position';
+      const reason = PLAN_REASON_TEXT[plan.reason] || (plan.reason ? humanizeReason(plan.reason) : '');
+      // Certainty found by the advisor: solving the odds again in full can
+      // prove the cell. Unavailable answers can be asked for again.
+      if (plan.reason === 'certain_moves') action = 'odds';
+      else if (plan.status === 'unavailable') action = 'advice';
+      detail = (reason ? capitalize(reason).replace(/\.?$/, '.') : '') +
+        (action === 'odds' ? ' Recalculate the odds to look for it.'
+          : action === 'advice' ? ' Retry advice, or choose a cell using its mine odds.'
+            : ' Choose a cell using its mine odds.');
+      detail = detail.trim();
+    } else {
+      state = 'off';
+    }
+    el.advice.hidden = state === 'off';
+    el.advice.dataset.state = state;
+    setText(el.adviceTitle, title);
+    setText(el.adviceDetail, detail);
+    el.adviceRetry.hidden = !action;
+    el.adviceRetry.dataset.action = action;
+    setText(el.adviceRetryLabel, action === 'odds' ? 'Recalculate odds' : 'Retry advice');
+  }
+
   // ----------------------------------------------------------------- rendering
 
   function setText(node, text) {
@@ -1368,6 +1815,7 @@ import { EngineClient, EngineError } from './engine-client.js';
     renderResult();
     renderBoard();
     renderOddsPanel();
+    renderAdvice();
     renderInspector();
     renderGameMeta();
   }
@@ -1499,12 +1947,13 @@ import { EngineClient, EngineError } from './engine-client.js';
     return hadFocus;
   }
 
-  function cellView(game, index, odds) {
+  function cellView(game, index, odds, advice) {
     const cell = game.cells[index];
     let cls = 'cell';
     let html = '';
     let base;
     let info = null;
+    let note = '';
     if (cell.revealed) {
       if (cell.mine === true || cell.exploded) {
         cls += ' is-revealed is-mine' + (cell.exploded ? ' is-exploded' : '');
@@ -1565,6 +2014,13 @@ import { EngineClient, EngineError } from './engine-client.js';
       } else if (cell.flagged) {
         html = ICON.flag;
       }
+      if (advisedIndex(advice) === index) {
+        // A marker beside the odds, never instead of them.
+        cls += ' is-advised';
+        html += ICON.advice;
+        note = (advice.status === 'exact' ? 'best next move (exact)' : 'suggested next move (estimate)') +
+          (cell.flagged ? ': remove the flag to reveal it' : '');
+      }
     }
     const where = capitalize(positionText(index, game.width));
     return {
@@ -1572,7 +2028,9 @@ import { EngineClient, EngineError } from './engine-client.js';
       html: html,
       base: base,
       info: info,
-      label: base + (info ? ', ' + info.label : '') + '. ' + where + '.'
+      note: note,
+      title: note ? capitalize(note) + '. Details below the board.' : '',
+      label: base + (info ? ', ' + info.label : '') + (note ? ', ' + note : '') + '. ' + where + '.'
     };
   }
 
@@ -1596,15 +2054,18 @@ import { EngineClient, EngineError } from './engine-client.js';
     el.board.setAttribute('aria-label', 'Minefield, ' + game.width + ' columns by ' + game.height + ' rows, ' +
       plural(game.mines, 'mine'));
     const odds = currentOdds();
+    const advice = currentAdvice();
     const total = game.cells.length;
     for (let i = 0; i < total; i++) {
-      const view = cellView(game, i, odds);
-      const sig = view.cls + '|' + view.html + '|' + view.label;
+      const view = cellView(game, i, odds, advice);
+      const sig = view.cls + '|' + view.html + '|' + view.label + '|' + view.title;
       if (boardView.sigs[i] !== sig) {
         const node = boardView.cells[i];
         node.className = view.cls;
         node.innerHTML = view.html;
         node.setAttribute('aria-label', view.label);
+        if (view.title) node.title = view.title;
+        else node.removeAttribute('title');
         boardView.sigs[i] = sig;
       }
     }
@@ -1613,11 +2074,13 @@ import { EngineClient, EngineError } from './engine-client.js';
 
   function inspectText(view) {
     const info = view.info;
-    if (!info) return view.base;
-    if (info.kind === 'value') {
-      return view.base + ', ' + info.text + ' mine chance (' + (info.estimated ? 'estimated' : 'exact') + ')';
+    let text = view.base;
+    if (info && info.kind === 'value') {
+      text += ', ' + info.text + ' mine chance (' + (info.estimated ? 'estimated' : 'exact') + ')';
+    } else if (info) {
+      text += ', ' + info.text;
     }
-    return view.base + ', ' + info.text;
+    return view.note ? text + ', ' + view.note : text;
   }
 
   function renderInspector() {
@@ -1629,7 +2092,7 @@ import { EngineClient, EngineError } from './engine-client.js';
       let index = app.hoverIndex;
       if (index < 0 && el.board.contains(document.activeElement)) index = app.focusIndex;
       if (index >= 0 && index < game.cells.length) {
-        const view = cellView(game, index, currentOdds());
+        const view = cellView(game, index, currentOdds(), currentAdvice());
         text = capitalize(positionText(index, game.width)) + ': ' + inspectText(view);
       } else if (game.status === 'ready') {
         text = 'Click any cell to start. The first reveal is always safe.';
@@ -2268,13 +2731,15 @@ import { EngineClient, EngineError } from './engine-client.js';
       'zoom-out', 'zoom-in', 'zoom-fit', 'new-game', 'custom-toggle', 'custom-form', 'custom-width',
       'custom-height', 'custom-mines', 'custom-width-error', 'custom-height-error', 'custom-mines-error',
       'custom-mines-hint', 'custom-form-error', 'custom-dims', 'engine-status', 'engine-status-text', 'odds-panel',
-      'odds-badge', 'odds-message', 'odds-detail', 'odds-meta', 'odds-retry', 'live', 'skip-link'
+      'odds-badge', 'odds-message', 'odds-detail', 'odds-meta', 'odds-retry', 'live', 'skip-link',
+      'advice', 'advice-title', 'advice-detail', 'advice-retry'
     ].forEach(function (id) {
       const node = document.getElementById(id);
       if (!node) throw new Error('Missing element #' + id);
       el[id.replace(/-([a-z])/g, function (_, ch) { return ch.toUpperCase(); })] = node;
     });
     el.resultAgainLabel = el.resultAgain.querySelector('span');
+    el.adviceRetryLabel = el.adviceRetry.querySelector('span');
     el.presetButtons = Array.prototype.slice.call(document.querySelectorAll('.preset[data-preset]'));
   }
 
@@ -2305,6 +2770,11 @@ import { EngineClient, EngineError } from './engine-client.js';
     el.oddsRetry.addEventListener('click', function () {
       retryOdds();
       if (el.oddsRetry.hidden) el.oddsToggle.focus();
+    });
+    el.adviceRetry.addEventListener('click', function () {
+      if (el.adviceRetry.dataset.action === 'odds') recalculateOdds();
+      else retryAdvice();
+      if (el.adviceRetry.hidden) restoreFocus();
     });
     el.zoomOut.addEventListener('click', function () {
       if (el.zoomOut.getAttribute('aria-disabled') !== 'true') zoomBy(-1);
