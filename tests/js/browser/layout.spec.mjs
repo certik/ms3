@@ -74,18 +74,26 @@ for (const autosolve of [false, true]) {
   });
 }
 
-test('wrapping autosolve feedback does not move the board', async ({ page }) => {
-  await page.setViewportSize({ width: 540, height: 800 });
-  await fixEntropy(page, 8);
-  await openApp(page);
-  await enableAutosolve(page);
-  const status = page.locator('#autosolve-status');
-  const ready = await status.boundingBox();
-  const before = await revealAndMeasure(page, 40);
-  await expect(status).toHaveText(/^Your move:/);
-  expect((await status.boundingBox()).height).toBeGreaterThan(ready.height);
-  expect(await boardGeometry(page)).toEqual(before);
-});
+for (const font of ['default', 'monospace']) {
+  test(`wrapping autosolve feedback does not move the board (${font})`, async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 800 });
+    await fixEntropy(page, 8);
+    await openApp(page);
+    await enableAutosolve(page);
+    const status = page.locator('#autosolve-status');
+    await status.evaluate((node, font) => {
+      if (font === 'monospace') node.style.fontFamily = font;
+      // Freeze the first message's intrinsic width, independent of system fonts.
+      node.style.width = 'max-content';
+      node.style.width = `${Math.ceil(node.getBoundingClientRect().width)}px`;
+    }, font);
+    const ready = await status.boundingBox();
+    const before = await revealAndMeasure(page, 40);
+    await expect(status).toHaveText(/^Your move:/);
+    expect((await status.boundingBox()).height).toBeGreaterThan(ready.height);
+    expect(await boardGeometry(page)).toEqual(before);
+  });
+}
 
 test('a win preserves the position and scroll offsets of a large board', async ({ page }) => {
   await openApp(page);
