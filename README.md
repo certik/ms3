@@ -23,7 +23,7 @@ everything else (Clang/lld 20, Wasmtime and Node.js) at the versions locked
 in `pixi.lock`.
 
 ```sh
-git clone --recurse-submodules <repository-url> minesweeper
+git clone --recurse-submodules https://github.com/certik/ms3.git minesweeper
 cd minesweeper
 pixi run --locked -e js start
 ```
@@ -647,13 +647,34 @@ other content types work too.
 - **Browser checks** on Linux: the JavaScript tests, then the browser tests
   against the built `dist/`, which is uploaded as the
   `minesweeper-static-site` artifact.
+- **GitHub Pages** after all checks pass on `main`: the exact tested `dist/`
+  is uploaded and deployed to <https://certik.github.io/ms3/>.
 
-The workflow has not run yet, because the repository has no remote. So far,
-the tests have run locally on macOS (Apple silicon): the native C suites, the
-same suites as WebAssembly under Wasmtime and Node.js, `check-wasm`, the
-JavaScript tests and the browser tests in Chromium, the phone profile,
-Firefox and WebKit all pass. The Linux and Windows native test programs have
-only been cross-compiled, not run.
+Every push to `main`, including a merged pull request, runs this pipeline and
+updates the website on success. Pull requests run the checks but do not
+publish. You can also start the pipeline from **Actions > CI > Run workflow**
+with branch `main`. Failed checks leave the last successfully deployed site
+unchanged, and a running main deployment is not cancelled by a newer push.
+
+### GitHub Pages settings
+
+The one-time publishing setting is **Settings > Pages > Build and deployment
+> Source > GitHub Actions**. Do not select "Deploy from a branch" or create a
+`gh-pages` branch: the workflow builds and uploads the generated files.
+You can skip GitHub's suggested workflow templates because this repository
+already has its publishing workflow.
+
+Under **Settings > Actions > General**, Actions must be enabled and the
+policy must allow GitHub's `actions/*` actions and
+`prefix-dev/setup-pixi@v0.10.2`. The default read-only workflow permissions
+can stay in place: only the deployment job requests `pages: write` and
+`id-token: write`. No personal access token, deployment secret, or permission
+to create pull requests is needed.
+
+The deployment uses the **github-pages** environment. Restrict its deployment
+branch rule to `main`. For unattended publishing, do not add required
+reviewers or a wait timer to that environment. If an existing protection rule
+requires approval, the deployment will wait for it.
 
 ## Project layout
 

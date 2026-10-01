@@ -8,6 +8,7 @@
 #   browser   JavaScript adapter tests against the production reactor and
 #             browser regression tests against the built dist/, which is
 #             then uploaded as the site artifact.
+#   deploy    publish the tested site to GitHub Pages, on main only.
 name: CI
 
 on:
@@ -21,7 +22,8 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded PR checks, but let a main deployment finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # pixi.lock uses lock-file format v7 (pixi >= 0.68, so not corec's 0.65);
@@ -138,3 +140,29 @@ jobs:
           path: dist/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload the tested GitHub Pages site
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5.0.0
+        with:
+          path: dist/
+
+  deploy:
+    name: Deploy GitHub Pages
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: browser
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v6.0.0
+
+      - name: Deploy the tested site
+        id: deployment
+        uses: actions/deploy-pages@v5.0.1
