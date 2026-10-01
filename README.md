@@ -97,6 +97,8 @@ Open every cell that does not hide a mine. A number tells you how many of the
   inside the board frame instead.
 - The timer starts on your first reveal and stops when you win or lose.
   Press **New game**, the face button, or **Play again** after a game ends.
+  The win/loss banner and autosolve feedback appear below the board, without
+  moving or covering its cells.
 - **Winning** flags every remaining mine automatically, so the counter ends
   at 0.
 - A move that changes nothing is ignored and leaves the game's revision

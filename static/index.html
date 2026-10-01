@@ -234,20 +234,7 @@
         </div>
       </div>
 
-      <p class="autosolve-status" id="autosolve-status" role="status" hidden></p>
       <div class="notice-region" id="notice-region" aria-live="polite"></div>
-
-      <div class="result" id="result" hidden>
-        <svg class="icon result-icon" aria-hidden="true"><use id="result-icon" href="#i-trophy"></use></svg>
-        <div class="result-text">
-          <strong id="result-title"></strong>
-          <span id="result-detail"></span>
-        </div>
-        <button type="button" class="btn btn-primary" id="result-again">
-          <svg class="icon" aria-hidden="true"><use href="#i-restart"></use></svg>
-          <span>Play again</span>
-        </button>
-      </div>
 
       <div class="board-frame" id="board-frame" data-status="none">
         <div class="board-scroller" id="board-scroller">
@@ -264,10 +251,23 @@
         </div>
       </div>
 
+      <div class="result" id="result" hidden>
+        <svg class="icon result-icon" aria-hidden="true"><use id="result-icon" href="#i-trophy"></use></svg>
+        <div class="result-text">
+          <strong id="result-title"></strong>
+          <span id="result-detail"></span>
+        </div>
+        <button type="button" class="btn btn-primary" id="result-again">
+          <svg class="icon" aria-hidden="true"><use href="#i-restart"></use></svg>
+          <span>Play again</span>
+        </button>
+      </div>
+
       <div class="board-footer">
         <p class="inspector" id="inspector">Hover over or focus a cell to see its details.</p>
         <p class="game-meta" id="game-meta"></p>
       </div>
+      <p class="autosolve-status" id="autosolve-status" role="status" hidden></p>
       <p class="visually-hidden" id="board-help">Arrow keys move between cells. Enter or Space reveals a cell, or opens the neighbors of a number whose flags are all placed. F toggles a flag.</p>
     </section>
 

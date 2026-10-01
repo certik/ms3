@@ -6,7 +6,7 @@
 // served read-only by scripts/serve.mjs twice: at the root and under a
 // nested project path. Nothing else is served: no API, no other origin.
 // Chromium runs everything (desktop, plus a touch phone profile for the
-// mobile spec); Firefox and WebKit run the module/worker smoke test.
+// mobile and layout specs); Firefox and WebKit run smoke and layout tests.
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { NESTED_BASE, ROOT_PORT, NESTED_PORT, SITE } from './browser/site.mjs';
@@ -54,17 +54,17 @@ export default defineConfig({
     {
       name: 'mobile',
       use: { ...devices['Pixel 7'] },
-      testMatch: /mobile\.spec\.mjs$/
+      testMatch: /(?:mobile|layout)\.spec\.mjs$/
     },
     {
       name: 'firefox',
       use: { ...devices['Desktop Firefox'] },
-      testMatch: /smoke\.spec\.mjs$/
+      testMatch: /(?:smoke|layout)\.spec\.mjs$/
     },
     {
       name: 'webkit',
       use: { ...devices['Desktop Safari'] },
-      testMatch: /smoke\.spec\.mjs$/
+      testMatch: /(?:smoke|layout)\.spec\.mjs$/
     }
   ]
 });
