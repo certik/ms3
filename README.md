@@ -161,90 +161,211 @@ The solver (`minesweeper/probability.py`) sees only public information: the
 board size, the total number of mines, and the numbers on revealed cells. It
 never receives the hidden layout, and it never receives flags.
 
-**Model.** Every hidden cell is a Boolean variable: mine or no mine. Each
-revealed number gives one equality: the number of mines among its hidden
-neighbors equals the clue. The total mine count gives one global equality.
+**Model.** Every hidden cell is a Boolean variable: 0 for safe, 1 for a mine.
+Each revealed number gives one equality: the number of mines among its
+hidden neighbors equals the clue. For example, a revealed 2 touching three
+hidden cells gives `a + b + c = 2`. The total mine count gives one global
+equality covering the whole board.
+
 Mines are placed uniformly at random, apart from the first-reveal rule. The
 first revealed cell is always a 0, and that clue already says its neighbors
 are safe, so the rule adds no information beyond the revealed numbers. Every
-layout that satisfies the equalities is therefore equally likely. A cell's
-probability is:
+complete board layout that satisfies the equalities is therefore equally
+likely. A cell's probability is:
 
-```
-P(mine at cell) = (layouts with a mine at the cell) / (all consistent layouts)
+```text
+P(cell i is a mine) =
+    consistent complete layouts with a mine in cell i
+    ------------------------------------------------
+            all consistent complete layouts
 ```
 
 This is **not** the same as reading clues locally. A `1` with three hidden
 neighbors does not make each of them 33% likely, because overlapping clues and
 the global mine count both change the weights.
 
-**Algorithm.** The solver works in five steps:
+### 1. Propagate forced assignments
 
-1. **Propagate forced assignments.** Apply sound deductions until nothing
-   changes. A clue whose mines are all accounted for makes its other neighbors
-   safe. A clue that needs all its hidden neighbors makes them all mines.
-   Overlapping clues are compared pairwise, and the global mine count gives
-   the extremes. The resulting cells are proven.
-2. **Split the frontier into components.** Frontier cells are hidden cells
-   next to at least one clue. Two frontier cells are connected when they share
-   a clue. Each connected component of this cell-clue incidence graph can be
-   solved on its own. Hidden cells next to no clue are *unconstrained*; they
-   are interchangeable and are handled as one pool.
-3. **Count each component exactly when tractable.** A memoized depth-first
-   search counts the satisfying assignments of a component, grouped by how
-   many mines they use. Cells that touch exactly the same clues are grouped
-   and counted together with binomial multiplicities, which keeps the search
-   small. The result is a histogram `H_c[k]`: the number of solutions of
-   component `c` with `k` mines. After the global conditioning in step 4, a
-   weighted backward pass over the same search gives each cell's exact
-   numerator.
-4. **Combine globally.** Components interact only through the mine total. With
-   `R` mines left to place and `U` unconstrained cells, one choice of mine
-   counts `k_1, k_2, ...` for the components has weight
-   `H_1[k_1] x H_2[k_2] x ... x C(U, R - sum k)`. The binomial `C(U, R - sum k)`
-   counts the ways to put the remaining mines into the unconstrained pool. The
-   solver convolves the histograms (a dynamic program over components) in
-   exact integer arithmetic. This conditions every probability on the global
-   mine count. The unconstrained cells share the expected number of leftover
-   mines: `E[R - sum k] / U` each.
-5. **Estimate only the hard parts.** A component can be too large and tangled
-   to count within the node or time budget. In that case the solver uses
-   bounded, constraint-aware sequential importance sampling:
-   - It assigns the component's cells one at a time. After each tentative
-     choice it checks feasibility with unit propagation. It flips a fair coin
-     only when both values are still possible.
-   - Each completed layout is weighted by the inverse of its proposal
-     probability. A dead end gets weight zero.
-   - The weighted samples replace that component's exact histogram and are
-     combined through the same global conditioning, including the binomial
-     term.
+A clue needing zero more mines makes its remaining neighbors safe. A clue
+needing as many mines as it has remaining neighbors makes them all mines.
+Comparing overlapping clues can reveal further certainties: `a + b = 1`
+together with `a + b + c = 1` proves `c = 0`. The global mine count also forces
+assignments when no mines remain, or every remaining cell must be a mine.
 
-   The result is labeled `approximate`, and only cells proven by logic or by
-   exactly counted components are marked certain. There is an
-   effective-sample-size guard: after global re-weighting, every sampled
-   component must reach an effective sample size of at least 50
-   (`MIN_EFFECTIVE_SAMPLE_SIZE` in `minesweeper/probability.py`). If it does
-   not, the answer is `unavailable` rather than a guess. The same happens if no
-   sampled layout fits the mine total, or if the budget runs out.
+The solver propagates these deductions and removes the fixed variables from
+the remaining problem. Pairwise overlap reasoning has a time budget; stopping
+it early only leaves more work for the counting phase. Flags do not reduce
+the remaining mine count unless the solver independently proves those mines.
 
-The server handles every request on its own thread, so a running solve never
-blocks moves. Each solve has a time budget, a counting-node budget and a
-sample budget. These are the `SOLVER_*` constants in `server.py`. Exact and
-approximate results are cached per game revision, so asking again for the same
-position is instant. Unavailable results are not cached: **Retry odds**
-recomputes them, which can succeed if the budget ran short only temporarily.
-The server rejects requests for a revision that is no longer current.
+### 2. Count connected regions separately
+
+The **frontier** consists of undetermined hidden cells involved in revealed
+clues. Cells connected through shared clues form a component. Each component
+can be counted separately, although its probabilities remain coupled to other
+components by the total mine count. Hidden cells involved in no remaining
+clue form one interchangeable, unconstrained pool.
+
+For each component `c`, the solver computes a histogram:
+
+```text
+H_c[k] = number of valid assignments containing exactly k mines
+```
+
+`_Component.count` uses a layered, memoized dynamic program, not whole-board
+enumeration. Cells participating in exactly the same clues are grouped.
+Choosing `m` mines among `g` interchangeable cells contributes `C(g, m)`
+assignments, where `C` is the binomial coefficient.
+
+The groups are ordered to keep as few clues open simultaneously as practical.
+At each layer, a state records the remaining mine requirements of the partly
+processed clues and holds a histogram of how many mines have been placed.
+Assignments leading to the same remaining requirements are merged by adding
+their histogram counts. Choices that leave too many mines, too few available
+cells to satisfy a clue, or exceed the remaining mine budget are pruned.
+This reuses common subproblems instead of visiting every valid assignment
+individually.
+
+### 3. Weight each component by the rest of the board
+
+Let `R` be the mines left after removing mines fixed by propagation, and `U`
+the number of unconstrained cells. One combination of component mine counts
+has weight:
+
+```text
+weight(k_1, k_2, ...) =
+    H_1[k_1] * H_2[k_2] * ... * C(U, R - k_1 - k_2 - ...)
+```
+
+The binomial factor counts how many ways the leftover mines can occupy the
+unconstrained cells. It is zero when the leftover count is negative or exceeds
+`U`. Component assignments with more possible completions elsewhere on the
+board must receive more weight.
+
+`_Solver._combine` convolves the component histograms rather than explicitly
+trying every combination of component mine counts. If `Q[t]` counts frontier
+assignments with `t` mines, the total number of consistent complete layouts is:
+
+```text
+Q = H_1 * H_2 * ...                 (* denotes polynomial convolution)
+Z = sum over t of Q[t] * C(U, R - t)
+```
+
+For each component, exact polynomial division of `Q` by its histogram recovers
+the counts for all the other components. These supply the outside weight for
+each possible mine count in that component. A weighted backward pass through
+the counting states then obtains each cell's numerator: the number of complete
+layouts containing a mine in that cell. Within a group of `g` interchangeable
+cells with `m` mines, requiring a particular cell to be mined contributes
+`C(g - 1, m - 1)` rather than `C(g, m)`. Dividing the resulting numerator by
+`Z` gives that cell's probability.
+
+Unconstrained cells all receive the same probability: the weighted expected
+number of leftover mines divided by `U`, or `E[R - t] / U`. Their odds are
+therefore not simply the total mine count divided by all hidden cells.
+Counts and weights remain arbitrary-precision Python integers until the final
+division; a huge binomial coefficient does not overflow floating-point
+arithmetic.
+
+#### Worked example: why local possibilities are not equally likely
+
+Suppose two revealed clues imply:
+
+```text
+a + b = 1
+b + c = 1
+```
+
+There are two possible local assignments. Suppose there are also six
+unconstrained cells and three mines to place overall:
+
+| Local assignment | Mines left for the six other cells | Complete-board possibilities |
+| --- | ---: | ---: |
+| Only `b` is mined: `(a, b, c) = (0, 1, 0)` | 2 | `C(6, 2) = 15` |
+| `a` and `c` are mined: `(a, b, c) = (1, 0, 1)` | 1 | `C(6, 1) = 6` |
+
+Thus there are `15 + 6 = 21` consistent complete layouts:
+
+```text
+P(b is mined) = 15 / 21 = 5 / 7       (about 71.4%)
+P(a is mined) = P(c is mined) = 6 / 21 (about 28.6%)
+```
+
+Each unconstrained cell has probability
+`(15 * 2 + 6 * 1) / (21 * 6) = 2 / 7`, also about 28.6%.
+The two local possibilities are **not 50/50**: one can be completed elsewhere
+on the board in more ways than the other.
+
+### 4. Estimate components that are too expensive to count
+
+For a component that exceeds the exact-counting budget, the solver uses
+**sequential importance sampling**. A partially explored counting search is
+not treated as an exact result or as a uniform sample.
+
+`_Sampler.draw` assigns cells in a fixed order. It tentatively tries both
+values and propagates forced assignments to detect contradictions. If only
+one value survives, it takes that value. If both survive, it flips a fair coin.
+A path that eventually reaches a dead end has weight zero. A draw interrupted
+by the deadline is discarded entirely.
+
+A completed assignment reached through `b` fair binary choices has proposal
+probability `2**(-b)`, so it receives inverse-proposal weight `2**b`. This
+correction matters: the sampler does not generate every valid assignment
+equally often. Weighted samples replace that component's exact histogram and
+cell counts, then undergo the same global conditioning, including the
+unconstrained-pool binomial factor.
+
+The result is labeled `approximate`. After global re-weighting, each sampled
+component must have at least 50 effective samples
+(`MIN_EFFECTIVE_SAMPLE_SIZE` in `minesweeper/probability.py`), calculated as:
+
+```text
+effective sample size = (sum of sample weights)**2 / sum of squared weights
+```
+
+This is a quality guard, **not an error bound or a proof of certainty**.
+Too few effective samples, no globally compatible sample combinations, or a
+budget exhausted before the result is complete produce `unavailable` rather
+than fabricated percentages. Independently proven cells can still be reported.
+
+### Budgets, certainty and scaling
+
+The defaults are the `SOLVER_*` constants in `server.py`:
+
+| Budget | Default |
+| --- | ---: |
+| Time per calculation | 1.5 seconds |
+| Exact forward-counting search nodes | 100,000 |
+| Sampling proposals, shared across hard components | 2,000 |
+
+Time is reserved for sampling and for combining results after counting. A
+separate guard limits stored dynamic-programming coefficients and edges.
+
+For an exact calculation, an integer numerator of zero proves a cell safe,
+and a numerator equal to `Z` proves it mined. Display rounding is never used
+to establish certainty. When some components are sampled, only independent
+logical deductions or proofs from exactly counted components are marked
+certain: a sampled 0% or 100% alone proves nothing. **Autosolve acts only on
+these proofs, never on rounded percentages or sampled endpoints.**
+
+The server copies the public clues under the game lock and releases that lock
+before calculating odds. Exact and approximate results are cached per game
+revision, avoiding recomputation for the same position.
+Unavailable results are not cached: **Retry odds** recomputes them, which can
+succeed if the budget ran short only temporarily. The server rejects requests
+for a revision that is no longer current.
 
 **Why the odds cannot always be exact and fast.** Deciding whether a
 Minesweeper position is consistent at all is NP-complete (Kaye, 2000).
 Counting its consistent layouts, which is what exact probabilities require, is
 #P-hard. No known algorithm gives exact answers quickly on every large board;
-the worst case grows exponentially. The cost depends on the frontier, not on
-the board area: on the size and tangledness of the largest connected
-component. An 80 x 80 board whose frontier is short and simple is cheap to
-count exactly. A mid-game Expert board with one long, interlocking frontier
-can exceed the budget. That is why the solver counts exactly where it can,
-estimates only where it must, and says which one it did.
+the worst case grows exponentially. A huge unconstrained region needs only
+combinatorial counts, and separate components do not require whole-board
+enumeration. The difficult work depends mainly on the frontier's structure,
+especially how many clue requirements must be tracked simultaneously. Even a
+long, narrow component can be cheap when the dynamic program reuses enough
+states. An 80 x 80 board with a simple frontier can be cheap to count exactly,
+while a smaller board with one tangled, interlocking frontier can exceed the
+budget.
 
 ## Project layout
 
