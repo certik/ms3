@@ -1,0 +1,140 @@
+# Continuous integration, mirroring corec's CI (pixi; native, Wasmtime and
+# Node on Linux, macOS and Windows) with every tool pinned by pixi.lock:
+#
+#   c-tests   per OS: native C tests (corec platform layer, no libc/CRT,
+#             audited linkage), the same C tests as WebAssembly under
+#             Wasmtime and under Node with corec's WASI host, WebAssembly
+#             audits/probes/reactor checks, and the static site build.
+#   browser   JavaScript adapter tests against the production reactor and
+#             browser regression tests against the built dist/, which is
+#             then uploaded as the site artifact.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # pixi.lock uses lock-file format v7 (pixi >= 0.68, so not corec's 0.65);
+  # this is the pixi release that produced it.
+  PIXI_VERSION: v0.76.1
+  COREC_COMMIT: a160199d1ca51f47e4ec4143668f5d467481e745
+
+jobs:
+  c-tests:
+    name: C tests (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            os: ubuntu-24.04
+          - platform: macos
+            os: macos-15 # Apple silicon, matching the osx-arm64 lock
+          - platform: windows
+            os: windows-2025
+    steps:
+      - name: Check out with the corec submodule
+        uses: actions/checkout@v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install the locked pixi environments
+        uses: prefix-dev/setup-pixi@v0.10.2
+        with:
+          pixi-version: ${{ env.PIXI_VERSION }}
+          locked: true
+          cache: true
+          environments: ${{ matrix.platform }} wasm js
+
+      - name: Verify the pinned, unmodified corec submodule
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD:third_party/corec)" = "$COREC_COMMIT"
+          test "$(git -C third_party/corec rev-parse HEAD)" = "$COREC_COMMIT"
+          test -z "$(git -C third_party/corec status --porcelain)"
+
+      - name: Native C tests
+        if: matrix.platform != 'windows'
+        run: pixi run -e ${{ matrix.platform }} test-native
+
+      - name: Native C tests (MSVC)
+        if: matrix.platform == 'windows'
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          pixi run -e windows test-native || exit /b 1
+
+      - name: C tests as WebAssembly under Wasmtime
+        run: pixi run -e wasm test-wasm
+
+      - name: C tests as WebAssembly under Node (corec WASI host)
+        run: pixi run -e js test-node
+
+      - name: WebAssembly audits, probes and reactor checks
+        run: pixi run -e js check-wasm
+
+      - name: Static site build and verification
+        run: pixi run -e js build-dist
+
+  browser:
+    name: Browser checks and static site artifact
+    needs: c-tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out with the corec submodule
+        uses: actions/checkout@v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install the locked pixi environment
+        uses: prefix-dev/setup-pixi@v0.10.2
+        with:
+          pixi-version: ${{ env.PIXI_VERSION }}
+          locked: true
+          cache: true
+          environments: js
+
+      - name: Install the JavaScript test tooling (package-lock.json)
+        run: pixi run -e js install-js
+
+      - name: Install Playwright browsers and their system dependencies
+        run: pixi run -e js npx --no playwright install --with-deps chromium firefox webkit
+
+      - name: JavaScript adapter and ABI tests (after building the production reactor)
+        run: pixi run -e js test-js
+
+      - name: Browser regression tests against dist/
+        run: pixi run -e js test-browser
+
+      - name: Upload browser test reports
+        if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: browser-test-reports
+          path: |
+            build/playwright/report/
+            build/playwright/results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload the tested static site
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: minesweeper-static-site
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,78 @@
+[workspace]
+name = "minesweeper"
+version = "0.1.0"
+description = "Minesweeper with exact mine odds: freestanding C on corec, compiled to native test runners and WebAssembly"
+# conda-forge provides clang/lld/nodejs; corec's channel provides the pinned
+# wasmtime build (the same package upstream corec uses).
+channels = ["conda-forge", "https://prefix.dev/certik-forge"]
+platforms = ["osx-arm64", "linux-64", "win-64"]
+# pixi.lock uses lock-file format v7, which pixi < 0.68 cannot read; CI pins
+# the pixi release that produced it (.github/workflows/ci.yml).
+requires-pixi = ">=0.68.0"
+
+# Every environment runs the Node build/check helpers in scripts/.
+[dependencies]
+nodejs = ">=22"
+
+#=============================================================================
+# WebAssembly: pixi's Clang/lld only (scripts/build.mjs refuses any other
+# compiler for wasm32-wasi), run under Wasmtime.
+#=============================================================================
+[feature.wasm.dependencies]
+clang = ">=20.1.4,<21"
+lld = ">=20.1.4,<21"
+wasmtime = { version = ">=38.0.3,<39", channel = "https://prefix.dev/certik-forge" }
+
+[feature.wasm.tasks]
+build-wasm = { cmd = "node scripts/build.mjs wasm", description = "Build the corec _start/app_main C test runner build/wasm/tests-<id>/ms_tests.wasm (one directory per suite set: tests-all, tests-runtime-game, ...); add --suite a,b for a subset" }
+test-wasm = { cmd = "node scripts/build.mjs test-wasm", description = "Build and run the C tests under Wasmtime; add --suite a,b for a subset" }
+build-reactor = { cmd = "node scripts/build.mjs reactor", description = "Build and audit the production reactor build/wasm/minesweeper.wasm (needs every engine source in c/)" }
+
+#=============================================================================
+# JavaScript hosts: the same .wasm under Node via corec's platform/js/wasi.js,
+# the static site, and the browser tests (package.json scripts, npm from the
+# pixi Node). No Python: static serving uses Node's built-in http module.
+#=============================================================================
+[feature.js.tasks]
+test-node = { cmd = "node scripts/build.mjs test-node", description = "Build and run the C tests under Node with corec's WASI host; add --suite a,b for a subset" }
+check-wasm = { cmd = "node scripts/check-wasm.mjs", description = "WebAssembly import/export audits, strict-link/policy probes, smoke and production reactor checks; --suite limits it to a subset and says the production reactor was skipped" }
+build-dist = { cmd = "node scripts/build.mjs dist", description = "Assemble and verify the static site in dist/: production reactor, static/, corec's wasi.js and MIT license" }
+serve = { cmd = "node scripts/serve.mjs", description = "Serve a static directory (default dist/) with Node's http module; options DIR --port N --host H --base /PREFIX/" }
+start = { cmd = "node scripts/serve.mjs dist", depends-on = ["build-dist"], description = "Build dist/ and serve it at http://127.0.0.1:8000/ (options as for serve)" }
+install-js = { cmd = "npm ci", description = "Install the pinned JavaScript test tooling from package-lock.json" }
+test-js = { cmd = "npm run test:js", depends-on = ["build-reactor"], description = "Build the production reactor, then run the JavaScript adapter/ABI tests (package.json script `test:js`; real-WASM tests use build/wasm/minesweeper.wasm and are required when CI is set)" }
+test-browser = { cmd = "npm run test:browser", depends-on = ["build-dist"], description = "Build dist/ and run the browser regression tests (package.json script `test:browser`)" }
+
+#=============================================================================
+# Native test runners, mirroring corec's platform_{macos,linux,windows}.c
+# conventions: -nostdlib -nostdinc -fno-builtin, no libc/CRT. scripts/build.mjs
+# audits the result (macOS: libSystem OS calls corec declares; Linux: no
+# library, no project memory helper references; Windows: kernel32/shell32).
+#=============================================================================
+[feature.macos.dependencies]
+clang = ">=20.1.4,<21"
+
+[feature.macos.tasks]
+build-native = { cmd = "node scripts/build.mjs native", description = "Build build/native/tests-<id>/ms_tests (macOS, links only libSystem; one directory per suite set); add --suite a,b for a subset" }
+test-native = { cmd = "node scripts/build.mjs test-native", description = "Build and run the native C tests (macOS); add --suite a,b for a subset" }
+
+[feature.linux.target.linux-64.dependencies]
+clang = ">=20.1.4,<21"
+
+[feature.linux.tasks]
+build-native = { cmd = "node scripts/build.mjs native", description = "Build build/native/tests-<id>/ms_tests (Linux raw syscalls, no libraries; one directory per suite set); add --suite a,b for a subset" }
+test-native = { cmd = "node scripts/build.mjs test-native", description = "Build and run the native C tests (Linux); add --suite a,b for a subset" }
+
+# MSVC (cl/link/dumpbin) comes from a vcvars64.bat environment, as in corec;
+# scripts/build.mjs takes the tools from %VCToolsInstallDir%.
+[feature.windows.tasks]
+build-native = { cmd = "node scripts/build.mjs native", description = "Build build/native/tests-<id>/ms_tests.exe (MSVC, /nodefaultlib, kernel32/shell32 only; one directory per suite set); add --suite a,b for a subset" }
+test-native = { cmd = "node scripts/build.mjs test-native", description = "Build and run the native C tests (Windows, MSVC); add --suite a,b for a subset" }
+
+[environments]
+default = { features = ["wasm", "js"], solve-group = "wasm" }
+wasm = { features = ["wasm"], solve-group = "wasm" }
+js = { features = ["wasm", "js"], solve-group = "wasm" }
+macos = { features = ["macos"], solve-group = "macos" }
+linux = { features = ["linux"], solve-group = "linux" }
+windows = { features = ["windows"], solve-group = "windows" }

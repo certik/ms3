@@ -1,0 +1,1527 @@
+{
+  "schema_version": 2,
+  "title": "Compatibility baseline: every Python test mapped to C, JS/browser, or retired server-only behavior",
+  "baseline": {
+    "commit": "153b78ac025858f11c124e6ae17953fdecd0aec3",
+    "command": "python3 -m unittest discover -s tests -v",
+    "python": "3.9.6",
+    "result": "Ran 149 tests: OK",
+    "counts": {"tests.test_game": 53, "tests.test_probability": 29, "tests.test_autosolve": 17, "tests.test_server": 50, "total": 149},
+    "id_format": "tests.<module>.<Class>.<method>. The Python baseline was deleted at retirement (see reconciliation.retirement); run an id from a checkout of the baseline commit with python3 -m unittest <id>"
+  },
+  "reconciliation": {
+    "pass": 7,
+    "state": "Final; Python retired and accepted. Every one of the 149 baseline tests is accounted for (96 port, 30 split, 23 retire), and all 181 destinations are mapped and executed with no unported assertion. Every cited label appears in actual runner output. Both deviations are accepted by the parent, and the Python deletion is accepted (see retirement). The dist-content allowlist recommendation is closed (guard in place). The only open item, not a coverage gap: native execution on Linux and Windows (the CI c-tests matrix) is unavailable in this environment and has not run; every reported run is macOS.",
+    "method": "Each destination was matched to replacement tests by reading their assertions and fixture use, not names. Cited labels are checked verbatim and unique against the snapshot by the audit's session validator. Validation comes from parent-reported gates, plus checks this audit ran itself (audit-dist-1, audit-native-1, audit-node-1). Pass 2 re-verified the final sources against snapshot 2, checked that the C tests consume every fixture table, and searched the new tests and sources for every string the baseline asserts. Pass 3 recorded the parent's final gates, re-checked dist/ read-only, deleted the Python files and re-ran the native C suite without Python. Pass 4 restored the Python files to keep retirement gated and checked every cited label against actual runner output: the native run, Playwright's --list collection and a Node TAP run. Pass 5 verified the probability owner's report, lifted the gate, deleted the Python files again and re-ran the native suite without Python. Pass 6 recorded the parent's acceptance of both deviations and of the retirement, plus the clean-checkout evidence, and told the foundations owner. Pass 7 verified the foundations owner's dist/ allowlist guard (audit-dist-2) and closed the last partial replacement.",
+    "date_utc": "2026-10-01T06:48:57Z",
+    "previous_pass_utc": "2026-10-01T06:44:01Z",
+    "fixture_checksums": {
+      "status": "verified unchanged against the delivered baseline",
+      "sha256": {
+        "tests/c/fixtures/autosolve_cases.h": "0a29176b4258a0cd07e91a26811dd2b0e34c7eb9a362a0aaa4f47891d9a971be",
+        "tests/c/fixtures/bigint_cases.h": "3c9959d0d4a40194a2da7a07742359b585a0abc2bedf33e3d0c6641b0860632d",
+        "tests/c/fixtures/engine_cases.h": "995a7dbf080f53c2e86098d73b00e1296119ce55f9044dd2766cf107bc31987f",
+        "tests/c/fixtures/fixture_types.h": "1c20b72cc98e9b4e37a2c3b709c09240b4ca521e19fafbbae62a19389819751c",
+        "tests/c/fixtures/game_scripts.h": "6c5f4015fe623ba013571c1b63a4e30d84451d9d6e95dd379e6faecab0a34a39",
+        "tests/c/fixtures/large_boards.h": "795925910904b531109a71e28bae8319492f21262ea640f595bb6dd012723da3",
+        "tests/c/fixtures/probability_cases.h": "3a5d38c794babdffb33ef022e3296bad5eb72f12fc27291c60ee7958f7192a59",
+        "tests/c/fixtures/sampling_cases.h": "e019e8c27c196c933d9f7e61d5572e7e8a11dd4aed9b2ce2130fe9f3899045d8"
+      }
+    },
+    "source_snapshot": {
+      "id": "snapshot-2",
+      "taken_utc": "2026-10-01T05:58:48Z",
+      "head": "153b78ac025858f11c124e6ae17953fdecd0aec3",
+      "note": "Uncommitted working tree. test_api.c, test_probability.c, test_runtime.c, test_support.h, abi.test.mjs and engine-client.test.mjs changed after snapshot 1 (05:26Z); every test they contribute here was re-inspected at snapshot 2. The audit keeps copies of these files for later diffs. Pass 2 (06:14Z): all 19 files still match; none changed after 05:50:51Z, before the parent's final gate report. Pass 3 (2026-10-01T06:29:29Z): still 19/19, after the Python deletion. Pass 4 (2026-10-01T06:35:10Z): still 19/19, with the Python files restored. Pass 5 (2026-10-01T06:37:53Z): still 19/19, after the final deletion. Pass 6 (2026-10-01T06:44:01Z): still 19/19. Pass 7 (2026-10-01T06:48:57Z): only scripts/build.mjs changed (the foundations dist allowlist guard, inspected and hash updated above); scripts/check-wasm.mjs is now cited and hashed; the other 18 are unchanged.",
+      "sha256": {
+        "tests/c/test_api.c": "54d599bccdcd1a617207423fe530541275c69f1377770e53e43d7cfcf43abfe7",
+        "tests/c/test_autosolve.c": "a7484a94e288ad1071cd43623c10389c4bc6d3521331a2e60d4cc063a9e1fd84",
+        "tests/c/test_bigint.c": "892f385f93db16db8508f1a1e68f65795cead6a11a95f944780443250d7d2095",
+        "tests/c/test_game.c": "8ded4a32ad1576b44a1d45ccffbd968327ff77060775c9c08664d0effc5a06b6",
+        "tests/c/test_probability.c": "81066d98b6cf7edd20684ab051eddae53d9c1f20ad034ee3c25dbd5d236a865a",
+        "tests/c/test_runtime.c": "5c5f868384a2e21e5c8019cc3a2a87133353150473bf3896745df18ebaa3c6f5",
+        "tests/c/test_support.h": "d44c8150fcbc6f5242ecd7519a5a4cfde1c5418ec549c787775cb03199d43b38",
+        "tests/js/abi.test.mjs": "6bb43ce9f242c8a0f26f6d0c656f2c853c325cd23c1232bb0817633c3266cc56",
+        "tests/js/engine-client.test.mjs": "a0b455185e8fcc76c5ccbdb7afbb0407aa283987305226755de55af433132833",
+        "tests/js/solver-host.test.mjs": "9da237c37adbbde5f09ee3bcd4625808938612b6dee12cc1040c108a32b79702",
+        "tests/js/browser/app.spec.mjs": "c9673a5d463ab6bf9219dc232d162b90eeba25685955ad0ac8542ac759df3324",
+        "tests/js/browser/autosolve.spec.mjs": "109e43fce312f8af15cb576fbe5e33ae69e3b0242c49d00a6d6693efc0b83f39",
+        "tests/js/browser/board.spec.mjs": "a080c64d5861551497c2d3f6db2136ff056bfeb4eb0b3cbdc98eb8728e3b75b1",
+        "tests/js/browser/mobile.spec.mjs": "f06dbd96f9f1e6fb2cb9b3f860b85d8cc1f053c48410568b7f4ed147dee789be",
+        "tests/js/browser/odds.spec.mjs": "f4a079cfa778485378bb11a0e805ee0e29d17bdaab8b62f23479f77564e19f5d",
+        "tests/js/browser/smoke.spec.mjs": "571d8f3133ee0e3fbf243e64f458dd5e16de224e35fa2f412587cf4fe60959f6",
+        "tests/js/browser/helpers.mjs": "f669249bbba3ccb543e06a941c3a8d6c995fff5ad9e0b1f54b2d63cab5555e2e",
+        "tests/js/playwright.config.mjs": "c0e83d13293b909d4a2852d3c98354cc532247b4513a9e2d6716add5af3b30cd",
+        "scripts/build.mjs": "43e69528bce2b37f47becf7b7941411122bcb76297f9e34018478a275e0a8043",
+        "scripts/check-wasm.mjs": "b1ccb88926fd5c226cffaef72157e175fffd09226370dbad31246de5a4b771e3"
+      }
+    },
+    "validation_runs": [
+      {"id": "gate-c-1", "status": "executed", "source": "Parent report; not re-run by this audit.", "suites": ["runtime", "bigint", "game", "api"], "targets": ["native (macOS)", "Wasmtime", "Node"], "files": ["tests/c/test_runtime.c", "tests/c/test_bigint.c", "tests/c/test_game.c", "tests/c/test_api.c"], "caveat": "test_api.c and test_runtime.c differ between snapshots 1 and 2, so the source revision this run used is unverified.", "rerun_by": "gate-c-final", "resolution": "gate-c-final re-ran all four suites on the final sources, which settles the caveat for every destination whose run is gate-c-1."},
+      {"id": "gate-c-final", "status": "executed", "source": "Parent report of the final source gates; not re-run by this audit.", "suites": ["runtime", "bigint", "game", "api", "probability", "autosolve"], "targets": ["native (macOS)", "Wasmtime", "Node"], "files": ["tests/c/test_runtime.c", "tests/c/test_bigint.c", "tests/c/test_game.c", "tests/c/test_api.c", "tests/c/test_probability.c", "tests/c/test_autosolve.c"], "detail": "All pass, including the real probability suite, the 80x80 autosolve trajectory (43 exact batches) and the runtime guard 'test_print(\"\") returns'."},
+      {"id": "gate-js", "status": "executed", "source": "Parent report (independent rerun); not re-run by this audit.", "command": "pixi run -e js test-js (builds the production reactor, then node --test tests/js/*.test.mjs)", "files": ["tests/js/abi.test.mjs", "tests/js/engine-client.test.mjs", "tests/js/solver-host.test.mjs"], "finalized": "67 tests: abi 20, engine-client 33, solver-host 14 (counted by the audit)", "detail": "All 67 actual-WASM Node tests pass."},
+      {"id": "gate-browser", "status": "executed", "source": "Parent report (independent rerun); not re-run by this audit.", "command": "pixi run -e js test-browser (build-dist, then Playwright with tests/js/playwright.config.mjs)", "projects": ["chromium: every spec except mobile.spec", "mobile (Pixel 7): mobile.spec", "firefox: smoke.spec", "webkit: smoke.spec"], "files": ["tests/js/browser/app.spec.mjs", "tests/js/browser/autosolve.spec.mjs", "tests/js/browser/board.spec.mjs", "tests/js/browser/mobile.spec.mjs", "tests/js/browser/odds.spec.mjs", "tests/js/browser/smoke.spec.mjs"], "finalized": "52 runs: chromium 46 (app 9, autosolve 9, board 12, odds 14, smoke 2), mobile 2, firefox 2, webkit 2 (counted by the audit)", "detail": "All 52 pass. The suite's global setup refuses a site lacking index.html, the reactor, corec's wasi.js and LICENSE, or byte-identical copies of static/."},
+      {"id": "audit-dist-2", "status": "executed", "source": "Run by this audit at 2026-10-01T06:47Z against the updated scripts/build.mjs; nothing was rebuilt.", "files": ["scripts/build.mjs"], "detail": "The distFileProbes cases on a /tmp scratch copy, through the exported verifyDist and checkSiteFiles: the registered release files pass; a stray server.py, minesweeper/game.py, tests/test_server.py, tests/app.test.mjs, .env, app.js.map or README.md is rejected; a missing app.js is rejected. The real dist/ holds exactly the release files and passes the new verifyDist, run read-only. Supersedes audit-dist-1 for every verifyDist citation."},
+      {"id": "foundations-dist-1", "status": "executed", "source": "Report from the foundations owner (ecec4309-55d2-478d-94d3-d8b485f661ec), 2026-10-01T06:46Z; not re-run by this audit, because check-wasm also builds WASM runners. audit-dist-2 replicated its cases.", "files": ["scripts/check-wasm.mjs"], "detail": "check-wasm's scratch-only distFileProbes rejects a stray server.py, a test file, a dotfile and a missing asset."},
+      {"id": "audit-dist-1", "status": "executed", "superseded_by": "audit-dist-2", "source": "Run by this audit, read-only, on the existing dist/ (assembled 2026-10-01T05:34Z) at 2026-10-01T06:24Z; nothing was rebuilt.", "files": ["scripts/build.mjs"], "detail": "The verifyDist checks, using scripts/build.mjs's own REACTOR_FILE, VENDOR_FILES and checkSiteReferences: required files present, reactor byte-identical to build/wasm, vendored corec files byte-identical, every literal reference relative and existing. Plus a full inventory: dist/ holds exactly the 9 expected files (static/, the reactor, corec's wasi.js and LICENSE), nothing else. build-dist itself (gate-dist) was not separately reported, though test-browser and start depend on it."},
+      {"id": "gate-reactor-audit", "status": "executed", "source": "Parent report ('full reactor audit'); not re-run by this audit.", "command": "pixi run -e js check-wasm (scripts/check-wasm.mjs)", "files": ["scripts/check-wasm.mjs"], "detail": "WebAssembly import/export audits, strict-link/policy probes, smoke and production reactor checks; cited by no destination (plan acceptance, not a baseline test)."},
+      {"id": "compare-620", "status": "executed", "source": "Parent report; supplementary evidence outside the repository tests.", "files": [], "detail": "620 positions solved by the production WASM, the Python baseline and brute-force enumeration: 509 exact and 111 contradictions, bit-identical odds and proofs, no workspace leaks. Strengthens the c-probability destinations; not cited as a test."},
+      {"id": "probability-owner-1", "status": "executed", "source": "Report from the c-probability owner (741a7714-0c4c-4745-8e2e-d5688be3c647) at 2026-10-01T06:35Z; claims spot-checked by this audit.", "suites": ["probability"], "targets": ["native (macOS)", "Wasmtime", "Node"], "files": ["tests/c/test_probability.c"], "detail": "pixi run -e macos test-native, -e wasm test-wasm and -e js test-node, each with --suite probability, pass. The audit confirmed the cited lines are unchanged since snapshot 2 (lines 946-957 and 966), that both zero-budget fixtures have node and sample budgets of 0, and that solve() validates every MS_OK result with ms_result_validate_solver (line 123)."},
+      {"id": "clean-checkout-1", "status": "executed", "source": "Parent report, 2026-10-01T06:42Z; not re-run by this audit.", "suites": ["runtime", "bigint", "game", "api", "probability", "autosolve"], "targets": ["Wasmtime"], "files": ["tests/c/test_runtime.c", "tests/c/test_bigint.c", "tests/c/test_game.c", "tests/c/test_api.c", "tests/c/test_probability.c", "tests/c/test_autosolve.c"], "detail": "A clean source-only copy (no Python, build outputs or dependencies) with corec pinned and pixi --locked: all 6 C suites pass under Wasmtime, and the production WASM's SHA-256 is byte-identical to the reviewed artifact."},
+      {"id": "audit-native-1", "status": "executed", "source": "Run by this audit: pixi run -e macos test-native twice at 2026-10-01T06:27-06:28Z (Python deleted and stubbed), then build/native/tests-all/ms_tests again at 06:32Z (Python restored).", "suites": ["runtime", "bigint", "game", "probability", "autosolve", "api"], "targets": ["native (macOS)"], "files": ["tests/c/test_runtime.c", "tests/c/test_bigint.c", "tests/c/test_game.c", "tests/c/test_probability.c", "tests/c/test_autosolve.c", "tests/c/test_api.c"], "detail": "6 suites passed each time; the run prints 210 labels, every cited C label among them."},
+      {"id": "audit-node-1", "status": "executed", "source": "Run by this audit at 2026-10-01T06:33Z: node --test --test-reporter=tap on the three Node test files with the existing build/wasm reactor (nothing rebuilt; per-process staging under build/js-test removed on exit).", "files": ["tests/js/abi.test.mjs", "tests/js/engine-client.test.mjs", "tests/js/solver-host.test.mjs"], "detail": "67 tests, all pass, no duplicate titles; every cited Node title is among them."},
+      {"id": "gate-ci", "status": "unavailable", "detail": "Native execution of the C suites on Linux and Windows (the .github/workflows/ci.yml c-tests matrix) is unavailable in this environment and has not run. Every reported run is macOS: native, Wasmtime and Node (gate-c-final, audit-native-1), Wasmtime from a clean source-only copy (clean-checkout-1), the reactor audit, and the Node and browser suites.", "files": []}
+    ],
+    "summary": {
+      "baseline_tests": 149,
+      "dispositions": {"port": 96, "split": 30, "retire": 23},
+      "destinations": 181,
+      "destination_status": {"mapped": 181},
+      "destination_validation": {"executed": 181},
+      "retired_replacements": {"mapped/executed": 9},
+      "retired_without_replacement": 14,
+      "deviations": 2,
+      "awaiting_by_gate": {},
+      "baseline_tests_fully_executed": 126,
+      "notes": "awaiting_by_gate counts destinations and replacement objects citing at least one file of a pending gate. baseline_tests_fully_executed counts port/split tests (126) whose every destination is executed."
+    },
+    "deviations": [
+      {"test": "tests.test_server.GameActionTests.test_rejects_invalid_action_payloads", "layer": "js-abi", "change": "A column of 1e40 (not a safe integer) is invalid_coordinates instead of out_of_bounds; it is still rejected before marshalling.", "status": "accepted", "signed_off_utc": "2026-10-01T06:42Z", "rationale": "Parent: rejecting a non-safe JS integer such as 1e40 as invalid_coordinates before i32 marshalling is the intended typed-JS safety boundary. It preserves rejection and no mutation and prevents wrapping, though Python's arbitrary integers classified it as out_of_bounds."},
+      {"test": "tests.test_server.ErrorHandlingTests.test_unexpected_errors_are_logged_and_hidden", "layer": "js-abi", "change": "An engine trap is shown under a generic title ('The game engine stopped') with its trap text, instead of a detail-free 500 body; the server-to-remote-client boundary no longer exists.", "status": "accepted", "signed_off_utc": "2026-10-01T06:42Z", "rationale": "Parent: local engine/worker failures may show diagnostic trap text under a generic title. There is no remote-server secrecy boundary, and failures stay explicit rather than success-shaped."}
+    ],
+    "decisions": [
+      {"id": "[49]", "decision": "Real solver statuses (exact, approximate, unavailable) carry effective_sample_size as null when C masks it and as a number when present, alongside the three count diagnostics; optional diagnostics are omitted only for the ready/finished placeholders (not-started, finished).", "applied_to": ["tests.test_server.ProbabilityTests.test_absent_optional_diagnostics_stay_absent (now split)", "tests.test_server.ProbabilityTests.test_optional_solver_diagnostics_are_forwarded", "behavior_matrix.probability.meta"], "replaces": "the pass-1 deviation for absent diagnostics"}
+    ],
+    "unported_assertions": [],
+    "unported_assertions_note": "Pass 3 found none. The pass-2 entry, the dist content allowlist for test_only_allowlisted_paths_are_served, was reclassified as a hardening recommendation. That test asserts only HTTP path rules (traversal, encoding, case, NUL, trailing slash, unknown files, /api), which the user's decision retired. Its static counterparts are covered: no /api requests (app.spec), required files, byte identity and references (verifyDist), and today's dist/ holds exactly the intended files (audit-dist-1). The plan never required a dist allowlist, and adding one later needs no Python. Since pass 7 the guard exists (STATIC_FILES and checkSiteFiles in verifyDist, covered by check-wasm's distFileProbes), so that replacement is fully mapped.",
+    "recommendations": [
+      {"owner": "toolchain (scripts/build.mjs)", "item": "Make verifyDist (or a test) fail when dist/ holds any file not from static/, the reactor or the vendored corec files, so the clean inventory audit-dist-1 found stays enforced.", "status": "Done: implemented by the foundations owner (STATIC_FILES and checkSiteFiles in verifyDist; check-wasm distFileProbes) and verified by audit-dist-2 on 2026-10-01T06:47Z."},
+      {"owner": "c/ and static/ maintainers (informational)", "item": "Some source comments name the retired Python modules as provenance (e.g. 'port of minesweeper/game.py'); they remain meaningful against commit 153b78a and need no change for correctness."}
+    ],
+    "fixture_consumption": "The C suites consume every fixture table. GAME_SCRIPTS, GAME_CONFIG_CASES, ENGINE_RESULT_CASES, PROBABILITY_CASES, SAMPLING_CASES, MALFORMED_OBSERVATIONS, LARGE_BOARD_CASES and AUTOSOLVE_SCRIPTS are iterated; AUTOSOLVE_PAUSE_CASES is checked through the scripts' pause events; the bigint tables are used by test_bigint.c. Only the MALFORMED_OBSERVATIONS rows node_budget_negative and sample_budget_negative are skipped, as unrepresentable (retired aspect).",
+    "baseline_strings": "Every string the baseline tests assert appears in the new tests or sources, except HTTP paths, methods, headers, transport-only error codes, ids, logger names and server-log reasons; those belong to retired aspects or transport notes.",
+    "gaps": {
+      "c (runtime, bigint, game, api, probability, autosolve)": [
+        "None: every C destination executed in gate-c-final, every fixture table is consumed, and the native suite passes after the Python deletion."
+      ],
+      "js adapter (abi, engine-client, solver-host)": [
+        "None: all 67 Node tests executed (gate-js)."
+      ],
+      "browser/UI": [
+        "None: all 52 browser runs executed (gate-browser), the @solver titles included."
+      ],
+      "toolchain/dist (scripts/build.mjs)": [
+        "None: verifyDist enforces the release-file allowlist (STATIC_FILES), check-wasm's distFileProbes covers it, and audit-dist-2 verified both the guard and the real dist/."
+      ],
+      "ci": [
+        "Only open item, not a coverage gap: native Linux and Windows execution (the CI c-tests matrix, gate-ci) is unavailable here and has not run; every reported run is macOS."
+      ],
+      "parent": [
+        "None: the parent accepted both deviations and the Python deletion on 2026-10-01T06:42Z (see reconciliation.deviations and retirement)."
+      ]
+    },
+    "closed": [
+      "Pass 1: tests.test_probability.SamplingTests.test_no_sampling_budget_is_unavailable moved from partial to mapped (check_sampling_result asserts samples == 0, sample_attempts == 0 and no ESS for a zero sample budget).",
+      "Pass 2: gate-c-final executed all six C suites, so the 34 solver/autosolve destinations are executed and gate-c-1's source caveat is settled.",
+      "Pass 2: decision [49] replaces the diagnostics deviation; test_absent_optional_diagnostics_stay_absent is split accordingly.",
+      "Pass 2: the three solver-output validation tests that also asserted the HTTP 500 and server-log reasons are split, with those assertions retired; five port tests gained their missing transport notes.",
+      "Pass 3: gate-js (67) and gate-browser (52) executed per the parent's independent rerun; the remaining 55 destinations and every replacement are executed. audit-dist-1 replaced the unreported gate-dist; [49] wording follows the parent's decision.",
+      "Pass 3: the dist allowlist was reclassified from unported assertion to hardening recommendation (see unported_assertions_note).",
+      "Pass 4: every cited label was checked against actual runner output. C: all 217 citations among the 210 labels printed by the 6-suite native run. Node: all 81 citations among the 67 TAP titles, which all pass. Browser: all 39 citations among the 52 runs Playwright collects (chromium 39, firefox 3, webkit 3). The 3 verifyDist references are covered by audit-dist-1.",
+      "Pass 5: the probability owner confirmed the explicit no_sampling_budget zero-sample assertion (probability-owner-1). It is the reconciled, unchanged check_sampling_result lines 946-957, so the gate was lifted and the Python files were deleted again.",
+      "Pass 6: the parent accepted both deviations, with rationale, and the Python deletion; clean-checkout-1 is recorded, the foundations owner was told retirement is confirmed, and the dist guard is requested from foundations by the parent.",
+      "Pass 7: the foundations owner added the dist/ release-file allowlist (STATIC_FILES, checkSiteFiles in verifyDist, check-wasm distFileProbes). audit-dist-2 verified it, so the last partial replacement (test_only_allowlisted_paths_are_served) is mapped and executed."
+    ],
+    "retirement": {
+      "status": "retired: the nine Python files were deleted at 2026-10-01T06:37:10Z (unstaged working-tree deletions, no commit)",
+      "gate": "Lifted. The parent's 06:30Z gate required the probability owner's explicit no_sampling_budget assertion to land and every pending entry to be reconciled. The owner confirmed the assertion at 06:35Z: check_sampling_result lines 946-957, unchanged since snapshot 2, already reconciled and executed in gate-c-final, audit-native-1 and probability-owner-1. No entry is pending.",
+      "history": [
+        "2026-10-01T06:27Z: deleted under the parent's 06:17Z authorization; the native suite then passed 6 suites with python/python3 stubs on PATH recording no calls.",
+        "2026-10-01T06:31:44Z: restored with git checkout, byte-identical to HEAD, after the parent's 06:30Z instruction to keep retirement gated.",
+        "2026-10-01T06:37:10Z: deleted again once the gate was met; the native suite (pixi run -e macos test-native) passed 6 suites at 06:37:14Z with Python stubbed (0 calls), ms_tests linking only libSystem.",
+        "2026-10-01T06:42Z: the parent accepted the deletion after building a clean source-only copy (clean-checkout-1), and asked that the foundations owner be told.",
+        "2026-10-01T06:43Z: told the foundations owner (ecec4309-55d2-478d-94d3-d8b485f661ec) that retirement is confirmed, so its temporary README note can go. This audit does not edit README.md."
+      ],
+      "accepted": "Parent, 2026-10-01T06:42Z.",
+      "files": ["server.py", "minesweeper/__init__.py", "minesweeper/game.py", "minesweeper/probability.py", "tests/__init__.py", "tests/test_game.py", "tests/test_probability.py", "tests/test_server.py", "tests/test_autosolve.py"],
+      "also_removed": "The then-empty minesweeper/ directory. No __pycache__ existed outside .pixi, node_modules, third_party and .git, so none was cleaned.",
+      "kept": "tests/ (c/, js/, coverage-map.json), every C, JS and fixture file, README (owned by foundations) and dist/ (not rebuilt: the parent's visual server is active; dist/index.html still dated 2026-10-01T05:34:44Z).",
+      "restore": "git checkout 153b78ac025858f11c124e6ae17953fdecd0aec3 -- <file>, or git restore while uncommitted.",
+      "no_python_dependency": "No pixi task, CI step or script references Python; C and JS mentions of the Python modules are provenance comments only."
+    }
+  },
+  "legend": {
+    "disposition": {
+      "port": "Every behavioral assertion is retained; HTTP/JSON transport details (status codes, headers) may disappear and are noted under transport.",
+      "split": "Some behavioral assertions are retained (destinations) and some are deliberately retired (retired, with rationale).",
+      "retire": "Server-only behavior with no counterpart in the static per-tab app; replacement names the analogous new coverage when one exists."
+    },
+    "status": {
+      "mapped": "The cited tests exist, and their assertions and fixture use (inspected, not inferred from names) cover the destination's asserts apart from a recorded deviation. Says nothing about execution: see validation.",
+      "partial": "The cited tests cover part of the asserts; gap says what is missing and owner who should add it.",
+      "pending": "No replacement test exists yet; pending_test is a proposed '<file>::<label>' identifier and gap/owner say who must add it. None remain after reconciliation pass 1."
+    },
+    "tests": "Replacement identifiers '<file>::<label>', exactly as the runners print them: C test_case labels; C table rows as '<table>/<row>' (test_game.c game_scripts, test_api.c engine_results and fixture_proof_trajectories, test_autosolve.c autosolve_scripts); Node and Playwright test titles with loop template literals expanded. 'scripts/build.mjs::verifyDist' names the dist verification that build-dist runs.",
+    "rows": "Rows exercised by an umbrella C test that does not print them: probability_cases -> PROBABILITY_CASES, sampling_cases -> SAMPLING_CASES, large_board_cases -> LARGE_BOARD_CASES.",
+    "validation": {
+      "executed": "Every cited test file belongs to a gate in reconciliation.validation_runs whose status is executed (parent-reported, or the audit's read-only audit-dist-1); run names that gate, or a list of gates.",
+      "mixed": "Some cited files belong to an executed gate (run); the others await a pending gate. None remain after pass 3.",
+      "not-executed": "Mapped in source only: validation is pending on the gate(s) owning the cited files. None remain after pass 3."
+    },
+    "deviation": "An intentional behavior change relative to the baseline or the planned asserts; the cited tests assert the new behavior. Listed in reconciliation.deviations for sign-off.",
+    "decision": "A parent decision (e.g. [49]) that defines the retained behavior; listed in reconciliation.decisions.",
+    "transport": "On port tests: the HTTP status or other transport detail that disappears while the behavior and its error code are retained.",
+    "replacement": "On retired tests: null when nothing replaces the behavior, otherwise an object with the destination fields (status, tests, validation, run, note, gap, owner) naming the analogous new coverage.",
+    "fixtures": "References are '<header in tests/c/fixtures>:<symbol>' or '<header>:<TABLE>/<case name>'. All fixtures are static C data; see tests/c/fixtures/fixture_types.h for the schema and generation method."
+  },
+  "layers": {
+    "c-runtime": "tests/c/test_runtime.c (suite runtime): budgets, injected fake clock, PRNG known answers and unbiased bounded draws, allocation failure/cleanup.",
+    "c-bigint": "tests/c/test_bigint.c (suite bigint): multiprecision gate (binomials, ratio-to-double, exact histogram division).",
+    "c-game": "tests/c/test_game.c (suite game): rules, validation, placement, flood/chord/flags, timers, revisions, public state/observation, deduction batches.",
+    "c-probability": "tests/c/test_probability.c (suite probability): exact counting, contradictions, malformed inputs, sampling, budgets, proofs; plus an independent C brute-force oracle.",
+    "c-autosolve": "tests/c/test_autosolve.c (suite autosolve): real-solver certainty-only batches, pause and resume trajectories; also hosts the engine-plus-real-solver odds check real_solver_two_mines_opened.",
+    "c-api": "tests/c/test_api.c (suite api): engine service beneath the WASM adapter: game generation/revision guards, public observation export, solver-result validation, revision-bound cache, placeholders, atomic autosolve.",
+    "js-abi": "node --test tests/js/*.test.mjs: abi.test.mjs (decoders, marshalling, worker protocol, messages), engine-client.test.mjs (the adapter against the production reactor, built by test-js) and solver-host.test.mjs (worker lifecycle with fake workers).",
+    "browser": "tests/js/browser/*.spec.mjs via tests/js/playwright.config.mjs against the built dist/: Chromium desktop runs every spec except mobile.spec, a Pixel 7 profile runs mobile.spec, Firefox and WebKit run smoke.spec. Titles tagged @solver need the real solver.",
+    "dist": "scripts/build.mjs verifyDist and checkSiteFiles (run by build-dist; dist/ must hold exactly the registered release files) and check-wasm, whose distFileProbes covers the allowlist; there is no separate dist test file."
+  },
+  "fixture_files": {
+    "tests/c/fixtures/fixture_types.h": "Hand-written schema: structs, enums (status/reason/error names), conventions, freestanding helpers (fixture_f64, run expansion, dense clues, class lookup).",
+    "tests/c/fixtures/probability_cases.h": "PROBABILITY_CASES (45: 38 exact observations with reduced-fraction odds classes, proofs and layout counts Z; 7 contradictions), MALFORMED_OBSERVATIONS (13), public-equivalence layouts.",
+    "tests/c/fixtures/sampling_cases.h": "SAMPLING_CASES (21): budgets, accepted statuses/reasons, RNG independence, proof rules, ESS and tolerance rules, baseline evidence over independent seeds.",
+    "tests/c/fixtures/large_boards.h": "80x80 maps as 80 row strings: two exact played boards, the time-bounded lattice board, the autosolve seed-19 layout and its paused final board; LARGE_BOARD_CASES.",
+    "tests/c/fixtures/autosolve_cases.h": "AUTOSOLVE_SCRIPTS (4 frozen 9x9 trajectories + the 80x80 trajectory) and AUTOSOLVE_PAUSE_CASES (exact odds at each pause).",
+    "tests/c/fixtures/game_scripts.h": "GAME_SCRIPTS (47 scripted games with per-step outcomes, revisions, flags, clock, renders), GAME_CONFIG_CASES (26), RNG property-test parameters.",
+    "tests/c/fixtures/engine_cases.h": "ENGINE_RESULT_CASES (44): mutations of a well-formed solver result for TWO_MINES at revision 1; accepted/rejected, normalized proofs, autosolve batch effect.",
+    "tests/c/fixtures/bigint_cases.h": "BIGINT_BINOMIALS (14, up to C(6400,3200)), BIGINT_RATIOS (10, incl. 10^400 endpoint guards), BIGINT_POLY_DIVISIONS (3)."
+  },
+  "behavior_matrix": {
+    "game": {
+      "limits": {"min_dimension": 5, "max_dimension": 80, "min_mines": 1, "max_mines": "width*height - 9", "presets": {"beginner": "9x9/10", "intermediate": "16x16/40", "expert": "30x16/99", "large": "50x30/225"}},
+      "statuses": {"ready": "no reveal yet, no mines placed", "playing": "mines placed at the first reveal", "won": "every safe cell revealed; all mines auto-flagged; timer frozen", "lost": "a mine revealed (reveal or chord); exploded cells marked; timer frozen"},
+      "actions": {"reveal": "no-op on revealed/flagged cells; first reveal places mines outside the clipped 3x3 block; zero cells flood iteratively; flags stay hidden", "flag": "toggle on hidden cells; no-op on revealed cells; flags may exceed the mine count", "chord": "on a revealed number whose adjacent flag count matches: opens the other hidden unflagged neighbours; wrong flags detonate; otherwise a no-op"},
+      "revisions": "Every state-changing action or deduction batch increments the revision by exactly 1; no-ops and errors never mutate. Each action carries the revision it was based on.",
+      "validation_order": "action -> coordinates (integers) -> bounds -> revision type -> stale -> game over; deductions: revision/stale/over -> not started -> index range -> distinct hidden cells. All validation precedes mutation.",
+      "public_state": {"retained_fields": ["width", "height", "mines", "status", "revision", "flags", "elapsed_seconds", "cells[].revealed", "cells[].flagged", "cells[].adjacent (revealed safe cells only)", "cells[].mine (terminal only)", "cells[].exploded"], "retired_fields": ["id"]},
+      "observation": "Solver input = clue value of every revealed safe cell; never flags, the layout or unrevealed clues.",
+      "timer": "Starts at the first reveal, frozen at win/loss; baseline rounds seconds to 3 decimals, i.e. integer milliseconds on the injected monotonic clock.",
+      "errors": [
+        {"code": "invalid_width", "http": 400, "disposition": "C status + JS message"},
+        {"code": "invalid_height", "http": 400, "disposition": "C status + JS message"},
+        {"code": "invalid_mines", "http": 400, "disposition": "C status + JS message naming the limit"},
+        {"code": "invalid_action", "http": 400, "disposition": "C (out-of-range enum) + JS (non-string/unknown name)"},
+        {"code": "invalid_coordinates", "http": 400, "disposition": "JS adapter only (non-integers)"},
+        {"code": "out_of_bounds", "http": 400, "disposition": "C status"},
+        {"code": "invalid_revision", "http": 400, "disposition": "C (negative) + JS (non-integer/unsafe)"},
+        {"code": "stale_revision", "http": 409, "disposition": "C status with latest public state"},
+        {"code": "game_over", "http": 409, "disposition": "C status with latest public state"},
+        {"code": "game_not_started", "http": 400, "disposition": "C status (autosolve/deductions before the first reveal)"},
+        {"code": "invalid_deductions", "http": 400, "disposition": "C status"},
+        {"code": "game_not_found", "http": 404, "disposition": "retired (no ids); an older game generation is refused as stale_revision by C"}
+      ]
+    },
+    "probability": {
+      "statuses": {"exact": "every component counted; 0/1 only for proven cells", "approximate": "some component sampled; 0/1 may appear without proof; proofs are logical/exact-component only", "unavailable": "no trustworthy estimate; only proven cells carry values", "not-started": "engine placeholder for ready games, solver not run", "finished": "engine placeholder for won/lost games, solver not run"},
+      "errors": {"inconsistent": "observation admits no layout (InconsistentBoardError); for a real game this is an internal engine failure", "malformed": "arguments outside the domain (ValueError)"},
+      "reasons": {"null": "exact", "counting_budget_exceeded": "approximate (hard components sampled)", "sampling_budget_exhausted": "unavailable, no sampling budget", "no_consistent_samples": "unavailable, every proposal of a component dead-ended", "no_globally_compatible_samples": "unavailable, sampled histograms cannot meet the total", "insufficient_effective_samples": "unavailable, ESS < 50", "time_budget_exhausted": "unavailable, deadline before completion", "not_started": "placeholder", "game_over": "placeholder"},
+      "meta": {"required": ["frontier_cells", "components", "unconstrained_cells", "samples", "elapsed_ms", "reason"], "optional_forwarded": ["exact_components", "sampled_components", "sample_attempts", "effective_sample_size"], "decision_49": "Real solver statuses (exact, approximate, unavailable) carry effective_sample_size as null when C masks it and as a number when present, alongside the three count diagnostics; optional diagnostics are omitted only for the ready/finished placeholders (not-started, finished).", "internal_not_exposed": ["nodes", "hidden_cells", "remaining_mines", "propagated_cells", "pair_reasoning_complete"]},
+      "budgets": {"time_s": 1.5, "nodes": 100000, "samples": 2000, "min_effective_sample_size": 50, "max_stored_entries": 1500000, "phase_fractions": {"pair": 0.10, "count": 0.35, "sample": 0.80, "reserve": 0.10}, "backward_time_factor": 2.0, "clock_work_units": 2048, "draw_clock_ops": 4096, "sample_batch": 8},
+      "proof_rules": ["Exact: integer numerator 0 proves safe, numerator == Z proves mine; never from rounding.", "Exact non-certain ratios never convert to 0.0/1.0 (smallest subnormal / 1-2^-53 guard).", "Approximate/unavailable: proofs only from propagation or exhaustively counted components; sampled endpoints never prove.", "Flags are not evidence."],
+      "message_templates": {
+        "exact": "Exact probabilities for {hidden} unrevealed cells ({frontier} next to clues in {components} group(s), {pool} unconstrained).",
+        "approximate": "Approximate probabilities: exact counting exceeded the budget for {hard} of {components} group(s), estimated from {samples} weighted samples (effective sample size {ess:.0f}). Only logically proven cells are marked certain.",
+        "unavailable": "Probabilities unavailable: {reason text}.",
+        "certain_suffix": " Certain: {safe} safe cell(s), {mines} mine(s).",
+        "reason_text": {"counting_budget_exceeded": "exact counting exceeded the budget", "sampling_budget_exhausted": "no sampling budget was left for the hard component(s)", "no_consistent_samples": "sampling found no consistent layout for a component", "no_globally_compatible_samples": "no sampled layouts could be combined to match the mine total", "insufficient_effective_samples": "too few effective samples for a reliable estimate", "time_budget_exhausted": "the time budget ran out before the result was complete"},
+        "not_started": "No mines have been placed yet. They are placed on your first reveal, and that cell and all of its neighbors are guaranteed to be safe.",
+        "finished": "This game is over (you {won|lost}), so there are no odds to show."
+      }
+    },
+    "engine_service": {
+      "result_validation": "Before caching or applying proofs: status in {exact, approximate, unavailable}; one value per cell; revealed cells null; exact/approximate complete for hidden cells; values finite in [0,1]; proof indices in range, distinct lists, hidden cells, value 0/1 respectively; meta counts non-negative; elapsed finite non-negative; diagnostics valid when present. Failures become probability_failed: nothing applied or cached.",
+      "cache": "Exact and approximate results cached for the current revision only; no-ops keep the cache; changes and batches clear it; unavailable and failures are never cached (retry recomputes).",
+      "autosolve": "One batch per call: solve (or reuse cache) for the current revision, apply proven mines as flags, clear flags on proven-safe cells, reveal them (with flood), one revision; never guesses; refuses ready (game_not_started) and finished (game_over) games; stale proofs rejected.",
+      "concurrency": "Every async request carries game generation, revision and request generation; the adapter and C both reject mismatches; obsolete solves are cancelled by recreating the solver worker only."
+    },
+    "ui": {
+      "preferences_retained": {"minesweeper.settings": "width/height/mines", "minesweeper.prefs": "zoom, odds, autosolve (autosolve still waits for the first reveal)"},
+      "storage_retired": {"minesweeper.gameId": "reload starts a new game; no restoration"},
+      "odds_formatting": "Exact: integer percent, '<1%' / '>99%' for non-certain extremes; estimated: '~N%' incl. '~0%'/'~100%'; proven cells use check/mine icons; unavailable shows no numbers except proven cells."
+    }
+  },
+  "retired_server_behaviors": [
+    {"behavior": "HTTP routing, methods, HEAD, Allow, Location, status codes, JSON/protocol error bodies, Server header", "rationale": "No application server; the static site calls the engine through JavaScript functions."},
+    {"behavior": "Request body rules: Content-Type, Content-Length/chunked, 8 KiB limit, JSON syntax, duplicate keys, unknown/missing fields, query strings", "rationale": "Typed function arguments replace HTTP bodies; the adapter validates JavaScript values before marshalling."},
+    {"behavior": "Static file allowlist, STATIC_DIR, /healthz", "rationale": "dist/ is served by any static host, which owns URL path handling. Its static analogue is enforced: verifyDist requires dist/ to hold exactly the registered release files (STATIC_FILES, the reactor, the vendored corec files) and checks byte identity and relative references, and the browser suite checks root and nested-path hosting and engine readiness."},
+    {"behavior": "Game store: ids, lookup, LRU eviction (256), 24 h TTL, store limits, game_not_found", "rationale": "User decision: independent per-tab games; reload starts a new game."},
+    {"behavior": "Server threads, per-game solver lock, MAX_CONCURRENT_SOLVES, solver_busy 503 + Retry-After, SOLVER_WAIT_TIMEOUT", "rationale": "Single-threaded game instance plus one solver worker per tab; duplicate requests coalesce in the client."},
+    {"behavior": "Server logging assertions and Python repr", "rationale": "No server process or logs; failures are visible in the UI instead."},
+    {"behavior": "JSON integer/float distinction (9.0, 1.0, 2.0 rejected)", "rationale": "JavaScript numbers cannot distinguish integral floats from integers; fractional, non-finite and unsafe values stay rejected."},
+    {"behavior": "Injectable random.Random / sample() objects and Python random streams", "rationale": "C uses its own specified PRNG (browser entropy for games, observation-derived seeds for sampling); tests use fixed C seeds and a deterministic layout hook."}
+  ],
+  "findings": [
+    {"id": "vacuous-sampling-determinism", "severity": "test-gap", "detail": "tests.test_probability.SamplingTests.test_injected_rng_makes_sampling_deterministic and test_default_rng_is_reproducible use random_observation(11), which propagation fixes completely (0 components, 0 samples, exact). They never exercise the sampler. Port them with SAMPLING_CASE_RANDOM_SEED_134_SAMPLED, which really samples.", "status": "resolved", "resolution": "test_probability.c 'sampling is deterministic for a seed; the default seed is the observation's' solves SAMPLING_CASE_RANDOM_SEED_134_SAMPLED and asserts an approximate result with samples > 0 before comparing seeds (executed in gate-c-final)."},
+    {"id": "lattice-never-approximate", "severity": "informational", "detail": "test_large_connected_component_is_time_bounded returns unavailable/no_consistent_samples at both 0.3 s and 1.0 s at baseline (5/5 evidence seeds), so its 'approximate' branch is untested; approximate paths are covered by the mixed and random sampling cases.", "status": "open (informational)", "resolution": "Not a migration gap: approximate results are exercised by the seed-134, mixed and node-budget cases; the lattice sampling rows keep the baseline's accepted statuses."},
+    {"id": "wall-clock-assertions", "severity": "flakiness-risk", "detail": "Baseline asserts wall-clock bounds (elapsed < 3.0 s, < budget + 0.5 s). Deterministic C budget tests should use the injected fake clock; keep wall-clock bounds only as generous responsiveness checks.", "status": "addressed", "resolution": "C budget tests run on injected fake clocks ('time budgets: phase deadlines on a fake clock', 'deadline injection at every clock check: valid, sound answers'; runtime 'injected clock is finite and monotonic'). Wall-clock bounds remain only in the @solver browser responsiveness checks."},
+    {"id": "integer-truncation", "severity": "port-risk", "detail": "Python integers never truncate. Fixtures add C cases at 2^32+1 (revision), 2^32/2^32+1/10^18 (coordinates), 2^32+9/2^32+10 (config) and 2^32+16 (deduction index); the adapter must also reject unsafe JavaScript integers instead of wrapping them.", "status": "addressed", "resolution": "The C harnesses map out-of-range fixture integers to UINT32_MAX (coordinates, configuration) and MS_REVISION_MAX (revisions). The adapter rejects non-integer and unsafe numbers before marshalling (engine-client 'createGame rejects values that would truncate, before marshalling', 'actions reject non-integer arguments before marshalling', 'revisions above the maximum are stale, never wrapped'; abi 'isU32 rejects everything that would truncate into an i32 parameter') and refuses any proof list, 2^32+16 included, in autosolve."},
+    {"id": "reason-string-not-validated", "severity": "stricter-in-c", "detail": "server._normalize_solver_result accepts any string as meta.reason. The C engine validates the reason enumeration (ENGINE_RESULT_CASES/reason_out_of_range).", "status": "resolved", "resolution": "engine_results/reason_out_of_range (gate-c-1) and abi 'malformed results are refused' (reason 10)."},
+    {"id": "solver-dimensions", "severity": "api-design", "detail": "calculate_probabilities accepts any width/height >= 1; baseline tests rely on 3001x1, 72x1, 18x1 and 3x1 boards. The C solver API must accept such thin boards independently of the 5..80 game limits.", "status": "resolved", "resolution": "'degenerate shapes: 1x1, 1x2, 6400x1 and 1x6400 boards', '3001-cell chain is exact without recursion' and the thin PROBABILITY_CASES rows run through the C solver (executed in gate-c-final)."},
+    {"id": "duplicate-proofs", "severity": "api-design", "detail": "The server merged duplicate proof indices (ENGINE_RESULT_CASES/proofs_normalized). A C engine may normalise or reject duplicates but must never apply a cell twice; the choice should be documented in engine.h.", "status": "resolved", "resolution": "engine.h documents that result proofs are per-cell flag bits, so no cell is applied twice, and that deduction lists may repeat a cell as Python's sets did. engine_results/proofs_normalized and 'deductions: list checks, duplicates, wrong proofs use REVEAL semantics' assert both (gate-c-1)."},
+    {"id": "correct-rounding", "severity": "port-risk", "detail": "Reference doubles are correctly rounded (Python int division) and the baseline compares some values for exact equality (corner 1/3 and 1999/6396). Bit-exact native/WASM parity is simplest with a correctly rounded ratio conversion; otherwise compare within 1e-12.", "status": "addressed", "resolution": "Reference doubles are compared bit for bit (check_exact_case; 'huge binomials cancel exactly; near-certain cells are not proofs' for 1/3 and 1999/6396; bigint 'ratios: fixtures, endpoint guard, ESS, subnormals, overflow, ties, literals'; 'deterministic results are bit-identical on every runtime')."}
+  ],
+  "tests": [
+    {
+      "id": "tests.test_game.ConfigValidationTests.test_accepts_boundary_configurations",
+      "disposition": "port",
+      "baseline": "5x5x1, 5x5x16, 80x80x6391, 5x80x391, 80x5x391 and 9x9x10 are accepted and start ready.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_config_cases"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_CONFIG_CASES"], "asserts": "Accepted rows create a ready game with the given dimensions and mine count."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::createGame accepts boundary configurations and returns a hidden ready GameState", "tests/js/engine-client.test.mjs::createGame passes valid safe integers through unchanged"], "validation": "executed", "run": "gate-js", "asserts": "The adapter passes valid safe integers through unchanged."}
+      ]
+    },
+    {
+      "id": "tests.test_game.ConfigValidationTests.test_max_mines_leaves_a_safe_three_by_three",
+      "disposition": "port",
+      "baseline": "max_mines = width*height - 9 (72 for 9x9, 16 for 5x5, 6391 for 80x80).",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_config_cases"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_CONFIG_CASES"], "asserts": "max_mines column equals width*height - 9 for valid dimensions."},
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/board.spec.mjs::custom boards validate 5..80 and at most area minus 9 mines"], "validation": "executed", "run": "gate-browser", "asserts": "Custom form validation reports the same limit."}
+      ]
+    },
+    {
+      "id": "tests.test_game.ConfigValidationTests.test_rejects_invalid_dimensions",
+      "disposition": "split",
+      "baseline": "Widths/heights 4, 81, 0, -9, True, False, 9.0, '9', None, [9], 10**20 raise invalid_width/invalid_height.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_config_cases"], "validation": "executed", "run": "gate-c-1", "note": "The harness maps fixture values outside 0..2^32-1 to UINT32_MAX, so 2^32+9 cannot truncate to 9.", "fixtures": ["game_scripts.h:GAME_CONFIG_CASES"], "asserts": "Integer rows 4, 81, 0, -9 and 2^32+9 (C addition: no truncation to 9) are rejected with the width/height code; validation order width, height, mines."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::createGame rejects values that would truncate, before marshalling", "tests/js/engine-client.test.mjs::createGame domain errors come from C in Python order", "tests/js/abi.test.mjs::isU32 rejects everything that would truncate into an i32 parameter"], "validation": "executed", "run": "gate-js", "asserts": "true, false, '9', null, [9], 9.5, NaN, Infinity and unsafe integers such as 1e20 are rejected before marshalling with invalid_width/invalid_height."}
+      ],
+      "retired": [{"aspect": "9.0 rejected as a float", "rationale": "JSON distinguished 9.0 from 9; a JavaScript number cannot, so integral 9.0 is the integer 9. Fractional values remain rejected."}]
+    },
+    {
+      "id": "tests.test_game.ConfigValidationTests.test_rejects_invalid_mine_counts",
+      "disposition": "split",
+      "baseline": "9x9 with 0, -1, 73, 81, True, False, 10.0, '10', None mines raises invalid_mines; the message names the limit 72.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_config_cases"], "validation": "executed", "run": "gate-c-1", "note": "The limit 72 is checked as max_mines; the message text naming it is a JS check.", "fixtures": ["game_scripts.h:GAME_CONFIG_CASES"], "asserts": "Integer rows 0, -1, 73, 81 and 2^32+10 (C addition) give invalid_mines; the reported limit is 72."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::createGame rejects values that would truncate, before marshalling", "tests/js/engine-client.test.mjs::createGame domain errors come from C in Python order", "tests/js/abi.test.mjs::status names, kinds and messages"], "validation": "executed", "run": "gate-js", "asserts": "Booleans, strings, null and fractions are rejected; the error message names the maximum (72 for 9x9)."}
+      ],
+      "retired": [{"aspect": "10.0 rejected as a float", "rationale": "Not representable as distinct from 10 in JavaScript (see test_rejects_invalid_dimensions)."}]
+    },
+    {
+      "id": "tests.test_game.FirstRevealTests.test_no_mines_exist_until_first_reveal",
+      "disposition": "port",
+      "baseline": "Flag and chord before the first reveal leave the game ready with no mines; the first reveal places exactly 10.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/no_mines_until_first_reveal"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_NO_MINES_UNTIL_FIRST_REVEAL"], "asserts": "Step outcomes and renders; a test-only inspection hook confirms nothing is placed before the reveal and 10 mines after it."}
+      ]
+    },
+    {
+      "id": "tests.test_game.FirstRevealTests.test_first_reveal_and_neighbors_are_safe_everywhere",
+      "disposition": "port",
+      "baseline": "For 5 configs x 8 first cells x 15 seeds: exact mine count, none in the clipped 3x3 start block, status playing/won, first cell shows 0.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::placement_first_reveal_safety_property"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_FIRST_REVEAL_CONFIGS", "game_scripts.h:GAME_FIRST_REVEAL_SEEDS"], "asserts": "Same property with the specified C PRNG seeded per case (not Python's stream)."}
+      ]
+    },
+    {
+      "id": "tests.test_game.FirstRevealTests.test_maximum_density_interior_start_wins_immediately",
+      "disposition": "port",
+      "baseline": "Max-density 5x5, 9x9 and 80x80 boards revealed at the centre win at once; all mines outside the block; flags equal mines.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/max_density_center_5x5", "tests/c/test_game.c::game_scripts/max_density_center_9x9", "tests/c/test_game.c::game_scripts/max_density_center_80x80"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_MAX_DENSITY_CENTER_5X5", "game_scripts.h:GAME_SCRIPT_MAX_DENSITY_CENTER_9X9", "game_scripts.h:GAME_SCRIPT_MAX_DENSITY_CENTER_80X80"], "asserts": "Forced layouts: the real placement path (layout NULL) must win immediately with every mine flagged."}
+      ]
+    },
+    {
+      "id": "tests.test_game.FirstRevealTests.test_maximum_density_corner_start_places_exact_count",
+      "disposition": "port",
+      "baseline": "5x5 with 16 mines revealed at (4,0) over 25 seeds: 16 mines outside the 4-cell corner block.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::placement_corner_density_property"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_CORNER_DENSITY_SEEDS"], "asserts": "Same property over 25 C PRNG seeds."}
+      ]
+    },
+    {
+      "id": "tests.test_game.FirstRevealTests.test_mine_placement_is_uniform_outside_the_start_area",
+      "disposition": "port",
+      "baseline": "4200 one-mine 5x5 games opened at (0,0): start block never mined; chi-square over 21 cells < 45.3.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::placement_uniformity_chi_square"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_UNIFORMITY_TRIALS", "game_scripts.h:GAME_UNIFORMITY_CHI2_LIMIT"], "asserts": "Same statistic with a fixed C seed."},
+        {"layer": "c-runtime", "status": "mapped", "tests": ["tests/c/test_runtime.c::splitmix64/xoshiro256** known-answer vectors", "tests/c/test_runtime.c::bounded draws and choices are uniform and unbiased"], "validation": "executed", "run": "gate-c-1", "asserts": "Known-answer vectors and rejection-sampled bounded draws underpin uniform placement."}
+      ]
+    },
+    {
+      "id": "tests.test_game.FirstRevealTests.test_revealing_a_flagged_cell_does_not_start_the_game",
+      "disposition": "port",
+      "baseline": "Flag (4,4) then reveal it: no-op, still ready at revision 1, no mines.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/revealing_flagged_cell_does_not_start"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_REVEALING_FLAGGED_CELL_DOES_NOT_START"], "asserts": "Recorded outcomes; no placement happens."}
+      ]
+    },
+    {
+      "id": "tests.test_game.FirstRevealTests.test_flagged_cells_in_start_area_stay_hidden",
+      "disposition": "port",
+      "baseline": "A flag inside the start block stays hidden through the opening flood.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/flagged_cells_in_start_area_stay_hidden"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_FLAGGED_CELLS_IN_START_AREA_STAY_HIDDEN"], "asserts": "Render after the reveal starts 0F000/00000/11211."}
+      ]
+    },
+    {
+      "id": "tests.test_game.FirstRevealTests.test_invalid_random_sample_is_rejected_before_mutation",
+      "disposition": "port",
+      "baseline": "A placement source returning duplicates raises before any state changes.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/invalid_layout_duplicates", "tests/c/test_game.c::game_scripts/invalid_layout_in_start_block", "tests/c/test_game.c::game_scripts/invalid_layout_wrong_count", "tests/c/test_game.c::game_scripts/invalid_layout_out_of_range", "tests/c/test_game.c::creation: argument order, generations, layout hook, allocation failure"], "validation": "executed", "run": "gate-c-1", "note": "A rejected layout is reported as MS_ERR_INTERNAL (engine.h); the hook defers validation to the first reveal.", "fixtures": ["game_scripts.h:GAME_SCRIPT_INVALID_LAYOUT_DUPLICATES", "game_scripts.h:GAME_SCRIPT_INVALID_LAYOUT_IN_START_BLOCK", "game_scripts.h:GAME_SCRIPT_INVALID_LAYOUT_WRONG_COUNT", "game_scripts.h:GAME_SCRIPT_INVALID_LAYOUT_OUT_OF_RANGE"], "asserts": "The deterministic fixed-layout test hook validates count, distinctness, range and the start block; the reveal fails with an invalid-layout error and the game stays ready at revision 0."}
+      ],
+      "notes": "Production placement uses the specified C PRNG with browser entropy; there is no injectable sampler object, so the guard lives in the test hook (and in assertions on the generator's output)."
+    },
+    {
+      "id": "tests.test_game.FloodTests.test_flood_reveals_zero_region_and_its_border",
+      "disposition": "port",
+      "baseline": "TWO_MINES opened at (0,0): rows 0-2 revealed (00000/00000/11211), rows 3-4 hidden.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/flood_reveals_zero_region"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_FLOOD_REVEALS_ZERO_REGION"], "asserts": "Render, status playing, revision 1, 15 revealed."}
+      ]
+    },
+    {
+      "id": "tests.test_game.FloodTests.test_flood_stops_at_numbers_on_other_side_of_wall",
+      "disposition": "port",
+      "baseline": "COLUMN opened at (2,0) floods only the left side up to the 1/2 wall.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/flood_stops_at_numbers"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_FLOOD_STOPS_AT_NUMBERS"], "asserts": "Render 001####/002####/001####/002####/001####."}
+      ]
+    },
+    {
+      "id": "tests.test_game.FloodTests.test_revealing_a_number_reveals_only_that_cell",
+      "disposition": "port",
+      "baseline": "Revealing numbered cell (3,0) opens only that cell.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/reveal_number_only_that_cell"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_REVEAL_NUMBER_ONLY_THAT_CELL"], "asserts": "Rows 3-4 read 1####/#####."}
+      ]
+    },
+    {
+      "id": "tests.test_game.FloodTests.test_flood_skips_flagged_cells",
+      "disposition": "port",
+      "baseline": "Flags inside a zero region stay hidden and flagged; the flood goes around them.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/flood_skips_flagged_cells"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_FLOOD_SKIPS_FLAGGED_CELLS"], "asserts": "Render F01####/.../0F1####, flags 2."}
+      ]
+    },
+    {
+      "id": "tests.test_game.FloodTests.test_huge_flood_is_iterative",
+      "disposition": "port",
+      "baseline": "80x80 with one mine at (79,79): the first reveal opens 6399 cells and wins.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/huge_flood_is_iterative"], "validation": "executed", "run": "gate-c-1", "note": "gate-c-1 ran it natively and as WebAssembly under Wasmtime and Node (1 MiB stack).", "fixtures": ["game_scripts.h:GAME_SCRIPT_HUGE_FLOOD_IS_ITERATIVE"], "asserts": "Won, revealed_count 6399; must pass natively and under Wasmtime/Node with the 1 MiB WASM stack (iterative queue, no recursion)."}
+      ]
+    },
+    {
+      "id": "tests.test_game.FlagTests.test_toggle_flag_counts_and_revisions",
+      "disposition": "port",
+      "baseline": "Flag toggles count up/down and each toggle is one revision.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/toggle_flag_counts_and_revisions"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_TOGGLE_FLAG_COUNTS_AND_REVISIONS"], "asserts": "(flags, revision) = (1,1) then (0,2); cell flag state in the render."}
+      ]
+    },
+    {
+      "id": "tests.test_game.FlagTests.test_flags_may_exceed_mine_count",
+      "disposition": "port",
+      "baseline": "18 flags on a 10-mine ready board are allowed; the game stays ready.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/flags_may_exceed_mine_count"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_FLAGS_MAY_EXCEED_MINE_COUNT"], "asserts": "flags 18, status ready."},
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/board.spec.mjs::right-click flags and unflags; the counter may go negative"], "validation": "executed", "run": "gate-browser", "asserts": "Counter shows mines minus flags, including negative values (README)."}
+      ]
+    },
+    {
+      "id": "tests.test_game.FlagTests.test_flagging_revealed_cell_is_a_noop",
+      "disposition": "port",
+      "baseline": "Flagging a revealed cell changes nothing and keeps the revision.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/flagging_revealed_cell_is_noop"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_FLAGGING_REVEALED_CELL_IS_NOOP"], "asserts": "Outcome no-op, revision unchanged."}
+      ]
+    },
+    {
+      "id": "tests.test_game.FlagTests.test_flagged_cell_can_be_revealed_after_unflagging",
+      "disposition": "port",
+      "baseline": "Reveal of a flagged cell is a no-op; after unflagging it reveals.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/flagged_cell_revealed_after_unflag"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_FLAGGED_CELL_REVEALED_AFTER_UNFLAG"], "asserts": "Recorded outcomes; row 3 ends as 1####."}
+      ]
+    },
+    {
+      "id": "tests.test_game.FlagTests.test_flags_before_start_do_not_start_timer",
+      "disposition": "port",
+      "baseline": "A flag before the first reveal plus 30 s on the fake clock leaves elapsed 0.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/flags_before_start_no_timer"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_FLAGS_BEFORE_START_NO_TIMER"], "asserts": "Injected monotonic clock (ms); elapsed_ms 0 after the advance step."}
+      ]
+    },
+    {
+      "id": "tests.test_game.ChordTests.test_chord_reveals_unflagged_neighbors_when_flags_match",
+      "disposition": "port",
+      "baseline": "Chording a 1 with its mine flagged reveals the other hidden neighbours.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/chord_reveals_unflagged_neighbors"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_CHORD_REVEALS_UNFLAGGED_NEIGHBORS"], "asserts": "Rows 3-4 read 1F###/#####."}
+      ]
+    },
+    {
+      "id": "tests.test_game.ChordTests.test_chord_is_noop_when_flag_count_differs",
+      "disposition": "port",
+      "baseline": "Chording a 2 with one or three adjacent flags changes nothing.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/chord_noop_when_flag_count_differs"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_CHORD_NOOP_WHEN_FLAG_COUNT_DIFFERS"], "asserts": "Both chords are no-ops with identical state."}
+      ]
+    },
+    {
+      "id": "tests.test_game.ChordTests.test_chord_on_hidden_or_unstarted_cells_is_a_noop",
+      "disposition": "port",
+      "baseline": "Chord before start, on a hidden cell, or on a zero with nothing to open is a no-op.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/chord_on_hidden_or_unstarted_is_noop"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_CHORD_ON_HIDDEN_OR_UNSTARTED_IS_NOOP"], "asserts": "Ready/revision 0 kept; later revision stays 1."}
+      ]
+    },
+    {
+      "id": "tests.test_game.ChordTests.test_chords_can_win_the_game",
+      "disposition": "port",
+      "baseline": "A sequence of chords with correct flags wins; final render 1F2F1 row.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/chords_can_win"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_CHORDS_CAN_WIN"], "asserts": "Each chord changes the game; the last one wins."}
+      ]
+    },
+    {
+      "id": "tests.test_game.ChordTests.test_chord_opening_a_zero_floods",
+      "disposition": "port",
+      "baseline": "Chords on COLUMN open zeros that flood the right half; a final chord wins.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/chord_opening_zero_floods"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_CHORD_OPENING_ZERO_FLOODS"], "asserts": "Intermediate render 001F100/0022200/001F100/002#200/001#100, then won."}
+      ]
+    },
+    {
+      "id": "tests.test_game.ChordTests.test_chord_with_wrong_flag_loses",
+      "disposition": "port",
+      "baseline": "A wrong flag makes the chord detonate mine 16; the wrong flag stays flagged and is publicly not a mine.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/chord_with_wrong_flag_loses"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_CHORD_WITH_WRONG_FLAG_LOSES"], "asserts": "Lost, exploded [16], cell 15 flagged with public mine=false."}
+      ]
+    },
+    {
+      "id": "tests.test_game.ChordTests.test_chord_detonating_several_mines_marks_each",
+      "disposition": "port",
+      "baseline": "A chord hitting two mines marks both as exploded.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/chord_detonating_several_mines"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_CHORD_DETONATING_SEVERAL_MINES"], "asserts": "Lost, exploded {16, 18}."}
+      ]
+    },
+    {
+      "id": "tests.test_game.TerminalStateTests.test_revealing_a_mine_loses",
+      "disposition": "port",
+      "baseline": "Revealing mine 16 loses at revision 2; that cell is revealed+mine+exploded with null clue; layout public; hidden clues stay null.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/revealing_a_mine_loses", "tests/c/test_runtime.c::public view validation"], "validation": "executed", "run": "gate-c-1", "note": "Every C view passes ms_view_validate, which rejects a clue on any unrevealed cell in every state (cell 20 stays private after the loss).", "fixtures": ["game_scripts.h:GAME_SCRIPT_REVEALING_A_MINE_LOSES"], "asserts": "Status/revision/exploded; terminal public state discloses exactly the layout mines; unrevealed clues remain absent."}
+      ]
+    },
+    {
+      "id": "tests.test_game.TerminalStateTests.test_actions_after_game_over_are_rejected_without_change",
+      "disposition": "port",
+      "baseline": "After a loss or a win, reveal/flag/chord raise game_over without changing state.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/actions_after_loss_rejected", "tests/c/test_game.c::game_scripts/actions_after_win_rejected"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_ACTIONS_AFTER_LOSS_REJECTED", "game_scripts.h:GAME_SCRIPT_ACTIONS_AFTER_WIN_REJECTED"], "asserts": "Each post-terminal action is FIXTURE_ERR_GAME_OVER with an unchanged state."}
+      ]
+    },
+    {
+      "id": "tests.test_game.TerminalStateTests.test_winning_requires_only_safe_reveals_and_flags_every_mine",
+      "disposition": "port",
+      "baseline": "Revealing every safe cell wins, auto-flags both mines, no explosion.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/actions_after_win_rejected"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_ACTIONS_AFTER_WIN_REJECTED"], "asserts": "Step 9: won, flags 2, row 3 1F2F1, no exploded cells, mines {16,18}."}
+      ]
+    },
+    {
+      "id": "tests.test_game.TimerTests.test_timer_starts_on_first_reveal_and_freezes_at_the_end",
+      "disposition": "port",
+      "baseline": "Elapsed is 0 before the first reveal, 2.25 s later, frozen at 3.75 s after the loss.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/timer_starts_and_freezes_on_loss", "tests/c/test_game.c::timer: whole milliseconds (ties to even), frozen at the end"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_TIMER_STARTS_AND_FREEZES_ON_LOSS"], "asserts": "elapsed_ms 0, 2250, 3750 with the injected clock (integer milliseconds)."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::elapsed_seconds is the engine milliseconds on the injected host clock", "tests/js/engine-client.test.mjs::the default host clock is performance.now", "tests/js/abi.test.mjs::a playing view marshals clues, flags and milliseconds without leaking the layout"], "validation": "executed", "run": "gate-js", "asserts": "The adapter reports elapsed_seconds = ms/1000 and the host clock adapter uses performance.now."}
+      ]
+    },
+    {
+      "id": "tests.test_game.TimerTests.test_timer_freezes_on_win",
+      "disposition": "port",
+      "baseline": "An immediate max-density win freezes elapsed at 0 despite a 60 s advance.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/timer_freezes_on_win"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_TIMER_FREEZES_ON_WIN"], "asserts": "Won, elapsed_ms 0 after the advance."}
+      ]
+    },
+    {
+      "id": "tests.test_game.RevisionAndValidationTests.test_each_state_change_increments_revision_once",
+      "disposition": "port",
+      "baseline": "Reveal, flag, chord each add exactly one revision.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/each_change_increments_revision"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_EACH_CHANGE_INCREMENTS_REVISION"], "asserts": "Revisions 1, 2, 3."}
+      ]
+    },
+    {
+      "id": "tests.test_game.RevisionAndValidationTests.test_noops_do_not_change_revision",
+      "disposition": "port",
+      "baseline": "Six no-op actions return false and leave the public state identical.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/noops_keep_revision"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_NOOPS_KEEP_REVISION"], "asserts": "Every listed step is FIXTURE_EXPECT_NOOP at revision 2."}
+      ]
+    },
+    {
+      "id": "tests.test_game.RevisionAndValidationTests.test_stale_revision_is_rejected_without_mutation",
+      "disposition": "port",
+      "baseline": "Expected revisions 0, 2, 99 raise stale_revision (expected, current=1) without mutation.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/stale_revision_rejected", "tests/c/test_game.c::generation/revision validation and the MS_REVISION_MAX guard"], "validation": "executed", "run": "gate-c-1", "note": "The C API takes uint32 revisions: the harness maps 2^32+1 to MS_REVISION_MAX (stale); the JS adapter half is 'revisions above the maximum are stale, never wrapped'.", "fixtures": ["game_scripts.h:GAME_SCRIPT_STALE_REVISION_REJECTED"], "asserts": "Stale errors report the current revision; 2^32+1 (C addition) must not truncate to 1."}
+      ]
+    },
+    {
+      "id": "tests.test_game.RevisionAndValidationTests.test_invalid_input_is_rejected_without_mutation",
+      "disposition": "split",
+      "baseline": "Unknown actions, non-integer or out-of-board coordinates and invalid revisions raise their codes without mutation; messages are non-empty.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/invalid_input_rejected", "tests/c/test_game.c::generation/revision validation and the MS_REVISION_MAX guard"], "validation": "executed", "run": "gate-c-1", "note": "Coordinates above 2^32-1 reach C as UINT32_MAX (out_of_bounds); the wrap itself is refused in JS ('out-of-bounds cells name the board ranges, checked before routing').", "fixtures": ["game_scripts.h:GAME_SCRIPT_INVALID_INPUT_REJECTED"], "asserts": "Raw action values 3/255/-1, coordinates -1/5 and 2^32, 2^32+1, 10^18, revision -1: codes as recorded, state unchanged."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::actions reject non-integer arguments before marshalling", "tests/js/engine-client.test.mjs::out-of-bounds cells name the board ranges, checked before routing"], "validation": "executed", "run": "gate-js", "asserts": "'explode', 'REVEAL', null, ['reveal'] -> invalid_action; true, false, 1.5, '1', null coordinates -> invalid_coordinates; true, '1', null, 1.5, -1 revisions -> invalid_revision; every error has a non-empty message."}
+      ],
+      "retired": [{"aspect": "1.0 coordinate/revision rejected as a float", "rationale": "Indistinguishable from 1 in JavaScript."}]
+    },
+    {
+      "id": "tests.test_game.RevisionAndValidationTests.test_invalid_input_before_start_does_not_place_mines",
+      "disposition": "port",
+      "baseline": "Out-of-bounds and stale first reveals leave the game ready with no mines.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/invalid_input_before_start"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_INVALID_INPUT_BEFORE_START"], "asserts": "out_of_bounds then stale_revision; ready, revision 0, nothing placed."}
+      ]
+    },
+    {
+      "id": "tests.test_game.SerializationTests.test_state_schema",
+      "disposition": "split",
+      "baseline": "Public state keys and initial values (ready, revision 0, flags 0, elapsed 0.0, 35 hidden cells with null clue/mine); JSON-serialisable.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::public_state_initial_values"], "validation": "executed", "run": "gate-c-1", "asserts": "C public state: dimensions, mines, status, revision, flags, elapsed_ms, per-cell revealed/flagged/clue validity/mine validity/exploded."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/abi.test.mjs::a ready view becomes a hidden GameState with null adjacency and mines", "tests/js/engine-client.test.mjs::createGame accepts boundary configurations and returns a hidden ready GameState"], "validation": "executed", "run": "gate-js", "note": "The adapter keeps a non-shareable local id ('local-<instance>-<generation>') and adds a generation field.", "asserts": "Reconstructed {width,height,mines,status,revision,flags,elapsed_seconds,cells[{revealed,flagged,adjacent,mine,exploded}]} with null adjacent/mine where the C validity mask is clear; JSON.stringify succeeds."}
+      ],
+      "retired": [{"aspect": "id field ('abc')", "rationale": "Per-tab games have no shareable id; the adapter tracks an internal game generation instead."}]
+    },
+    {
+      "id": "tests.test_game.SerializationTests.test_no_hidden_information_before_game_ends",
+      "disposition": "port",
+      "baseline": "Over 10 seeds of 12x10x25, public cells never expose mine, exploded or unrevealed clues while playing.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::public_state_no_leak_property", "tests/c/test_runtime.c::public view validation"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_NO_LEAK_CONFIG", "game_scripts.h:GAME_NO_LEAK_SEEDS"], "asserts": "Same property on the C public state with C PRNG seeds."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::public state never carries the layout before the end", "tests/js/abi.test.mjs::malformed views are refused, never patched"], "validation": "executed", "run": "gate-js", "asserts": "Adapter output has mine null and adjacent null for hidden cells while ready/playing."}
+      ]
+    },
+    {
+      "id": "tests.test_game.SerializationTests.test_cells_are_row_major",
+      "disposition": "port",
+      "baseline": "Cell (1,2) of COLUMN is index 1*7+2 with clue 2; hidden mine (2,3) has a null clue.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::cells are row-major", "tests/c/test_game.c::game_scripts/flood_stops_at_numbers"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_FLOOD_STOPS_AT_NUMBERS"], "asserts": "Render index row*width+col: (1,2) is '2', (2,3) is '#'."}
+      ]
+    },
+    {
+      "id": "tests.test_game.SerializationTests.test_revealed_clues_contains_only_public_safe_cells",
+      "disposition": "port",
+      "baseline": "The solver observation equals the revealed cells' clues (15 cells, flags excluded) and is a copy.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/revealed_clues_public_only", "tests/c/test_game.c::revealed_clues_public_only: observation export"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_REVEALED_CLUES_PUBLIC_ONLY", "probability_cases.h:PROB_CASE_TWO_MINES_OPENED"], "asserts": "Public observation export equals the render's digits (no flags, no layout) and is written to a caller-owned buffer, so later edits by the caller cannot affect the game."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::a playing position is solved by the worker and accepted by C", "tests/js/solver-host.test.mjs::starts a worker with the cached module, then sends one copied public observation", "tests/js/solver-host.test.mjs::a sub-view observation is copied before it is transferred"], "validation": "executed", "run": "gate-js", "asserts": "Only an explicit copy of the observation is posted; never the game instance's memory."}
+      ]
+    },
+    {
+      "id": "tests.test_game.SerializationTests.test_repr_does_not_leak_layout",
+      "disposition": "retire",
+      "baseline": "Python repr(game) shows only id, size, mines, status and revision.",
+      "retired": [{"aspect": "Python repr used in server logs", "rationale": "There is no Python object or server log. Layout secrecy of every public output is covered by test_no_hidden_information_before_game_ends and the public-observation tests."}]
+    },
+    {
+      "id": "tests.test_game.GameStoreTests.test_create_and_get",
+      "disposition": "retire",
+      "baseline": "The store creates games with unguessable ids, returns the same entry by id, and counts them.",
+      "retired": [{"aspect": "Server-wide game store and ids", "rationale": "User decision: each tab owns one independent game; reload starts a new game. There is no lookup by id."}],
+      "replacement": {"status": "mapped", "tests": ["tests/js/engine-client.test.mjs::createGame accepts boundary configurations and returns a hidden ready GameState", "tests/js/engine-client.test.mjs::game buffers are owned once per board size and released on resize", "tests/c/test_api.c::repeated new games release the previous game", "tests/c/test_api.c::engine_instances_are_independent"], "validation": "executed", "run": ["gate-c-final", "gate-js"], "note": "A new game replaces the tab's only game and releases the previous one; there is no store to read it back from."}
+    },
+    {
+      "id": "tests.test_game.GameStoreTests.test_unknown_or_malformed_ids_are_not_found",
+      "disposition": "retire",
+      "baseline": "Unknown or malformed ids raise game_not_found.",
+      "retired": [{"aspect": "game_not_found / id pattern", "rationale": "No ids exist in the per-tab engine."}],
+      "replacement": {"status": "mapped", "tests": ["tests/c/test_api.c::engine_instances_are_independent", "tests/js/engine-client.test.mjs::a new game or an explicit cancel also abandons the old request", "tests/js/engine-client.test.mjs::revisions above the maximum are stale, never wrapped"], "validation": "executed", "run": ["gate-c-final", "gate-js"], "note": "The generation number replaces ids: after a new game every entry point refuses the old generation as stale_revision, even at a matching revision."}
+    },
+    {
+      "id": "tests.test_game.GameStoreTests.test_invalid_config_is_not_stored",
+      "disposition": "split",
+      "baseline": "An invalid configuration raises and nothing is stored.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::failed_new_game_keeps_current_game"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_CONFIG_CASES"], "asserts": "A rejected configuration creates nothing and leaves the current game and its generation untouched."}
+      ],
+      "retired": [{"aspect": "Store length", "rationale": "No multi-game store."}]
+    },
+    {
+      "id": "tests.test_game.GameStoreTests.test_full_store_evicts_least_recently_used",
+      "disposition": "retire",
+      "baseline": "With max_games=2 the least recently used game is evicted.",
+      "retired": [{"aspect": "LRU eviction (256 games)", "rationale": "Server-only resource policy; a tab holds exactly one game."}]
+    },
+    {
+      "id": "tests.test_game.GameStoreTests.test_idle_games_expire",
+      "disposition": "retire",
+      "baseline": "Games idle for idle_ttl expire.",
+      "retired": [{"aspect": "24 h idle TTL", "rationale": "Server-only; the game lives as long as its tab."}]
+    },
+    {
+      "id": "tests.test_game.GameStoreTests.test_rejects_nonsensical_limits",
+      "disposition": "retire",
+      "baseline": "GameStore rejects max_games 0/True and idle_ttl 0.",
+      "retired": [{"aspect": "Store configuration", "rationale": "No store exists."}]
+    },
+    {
+      "id": "tests.test_game.GameStoreTests.test_conflict_errors_carry_latest_state",
+      "disposition": "port",
+      "baseline": "Stale and game-over errors carry the latest public state.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/conflict_errors_carry_latest_state"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_CONFLICT_ERRORS_CARRY_LATEST_STATE"], "asserts": "After stale_revision and game_over the public state equals the recorded state."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::conflicts return the latest state and never replay the move", "tests/js/engine-client.test.mjs::won and lost games refuse moves and disclose the layout"], "validation": "executed", "run": "gate-js", "asserts": "Stale/game-over errors expose the latest GameState so the UI shows it without replaying the move."}
+      ]
+    },
+    {
+      "id": "tests.test_game.GameStoreTests.test_concurrent_actions_on_one_revision_apply_exactly_once",
+      "disposition": "split",
+      "baseline": "16 threads flag on revision 0: exactly one succeeds, 15 are stale.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/stale_revision_rejected"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_STALE_REVISION_REJECTED"], "asserts": "Two actions built for the same revision: the first applies, the second is stale."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::conflicts return the latest state and never replay the move"], "validation": "executed", "run": "gate-js", "asserts": "Rapid UI actions send the revision they were based on; only one applies per revision."}
+      ],
+      "retired": [{"aspect": "Thread-level locking", "rationale": "The game instance is single-threaded on the main thread; there is no concurrent mutation."}]
+    },
+    {
+      "id": "tests.test_game.GameStoreTests.test_snapshot_and_probability_cache_follow_revisions",
+      "disposition": "port",
+      "baseline": "Observations exist only while playing; a cached result is kept only for the live revision; a stale store is ignored; no-ops keep the cache; changes clear it.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::cache_follows_revisions"], "validation": "executed", "run": "gate-c-1", "note": "A result offered for revision 0 is refused as stale rather than silently ignored.", "fixtures": ["game_scripts.h:GAME_SCRIPT_REVEALED_CLUES_PUBLIC_ONLY", "engine_cases.h:ENGINE_RESULT_CASES/base_exact"], "asserts": "No observation while ready; 15-cell observation at revision 1; accepting a result for revision 0 is ignored; revision 1 result is cached; a no-op flag keeps it; a real flag drops it."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.ExactAgreementTests.test_random_small_boards_match_brute_force",
+      "disposition": "port",
+      "baseline": "150 random observations (<= 14 hidden cells) are exact and equal whole-board enumeration to 12 places; 0/1 appear exactly for certain cells; proof lists equal certain cells; probabilities sum to the total.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::probability_cases: exact odds, proofs and meta; contradictions", "tests/c/test_probability.c::random_boards_match_c_brute_force (C PRNG observations)"], "rows": ["random_seed_0", "random_seed_5", "random_seed_11", "random_seed_21", "random_seed_39", "random_seed_54", "random_seed_74", "random_seed_82", "random_seed_93", "random_seed_126", "random_seed_128", "random_seed_131", "random_seed_134"], "validation": "executed", "run": "gate-c-final", "note": "Values are compared bit for bit with the reference doubles; the second test also re-enumerates every small fixture and checks its layout count.", "fixtures": ["probability_cases.h:PROB_CASE_RANDOM_SEED_0", "probability_cases.h:PROB_CASE_RANDOM_SEED_5", "probability_cases.h:PROB_CASE_RANDOM_SEED_11", "probability_cases.h:PROB_CASE_RANDOM_SEED_21", "probability_cases.h:PROB_CASE_RANDOM_SEED_39", "probability_cases.h:PROB_CASE_RANDOM_SEED_54", "probability_cases.h:PROB_CASE_RANDOM_SEED_74", "probability_cases.h:PROB_CASE_RANDOM_SEED_82", "probability_cases.h:PROB_CASE_RANDOM_SEED_93", "probability_cases.h:PROB_CASE_RANDOM_SEED_126", "probability_cases.h:PROB_CASE_RANDOM_SEED_128", "probability_cases.h:PROB_CASE_RANDOM_SEED_131", "probability_cases.h:PROB_CASE_RANDOM_SEED_134"], "asserts": "Frozen observations: exact status, reference doubles (bit-exact if the conversion is correctly rounded, else within 1e-12), proofs equal certain cells, layout count Z."},
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::random_boards_match_c_brute_force (C PRNG observations)"], "validation": "executed", "run": "gate-c-final", "note": "400 C-PRNG observations (13 board shapes, <= 14 hidden cells for the first 8) plus every other mine total for every 8th observation.", "asserts": "Plan requirement: an independent C whole-board enumerator checks >= 150 observations generated with the C PRNG (same size mix and <= 14 hidden cells)."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.ExactAgreementTests.test_isolated_components_are_coupled_by_the_mine_total",
+      "disposition": "port",
+      "baseline": "Two disconnected components and two free cells with totals 2..6: exact, 2 components, 2 unconstrained; odds differ by total; totals 6 and 2 prove everything.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::probability_cases: exact odds, proofs and meta; contradictions", "tests/c/test_probability.c::1000 components coupled only by the total: closed form, bounded memory"], "rows": ["components_total_2", "components_total_3", "components_total_4", "components_total_5", "components_total_6"], "validation": "executed", "run": "gate-c-final", "note": "The 1000-component case compares every cell bit for bit with an independent bigint closed form.", "fixtures": ["probability_cases.h:PROB_CASE_COMPONENTS_TOTAL_2", "probability_cases.h:PROB_CASE_COMPONENTS_TOTAL_3", "probability_cases.h:PROB_CASE_COMPONENTS_TOTAL_4", "probability_cases.h:PROB_CASE_COMPONENTS_TOTAL_5", "probability_cases.h:PROB_CASE_COMPONENTS_TOTAL_6"], "asserts": "Odds classes, proofs (total 6: mines 0,4,5,6,10,11, safe 2,8; total 2: mines 2,8), meta components 2 / unconstrained 2."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.ExactAgreementTests.test_unconstrained_region_weights_component_mine_counts",
+      "disposition": "port",
+      "baseline": "README example: P(b)=15/21, P(a)=P(c)=6/21, free cells 2/7 rather than 3/9; mine sum 3.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::probability_cases: exact odds, proofs and meta; contradictions"], "rows": ["readme_weighting"], "validation": "executed", "run": "gate-c-final", "fixtures": ["probability_cases.h:PROB_CASE_README_WEIGHTING"], "asserts": "Classes 5/7 and 2/7, Z = 21, no proofs."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.ExactAgreementTests.test_frontier_and_pool_on_2d_board",
+      "disposition": "port",
+      "baseline": "6x3 with one corner clue: frontier 1/3, pool 4/14; frontier_cells 3, unconstrained 14.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::probability_cases: exact odds, proofs and meta; contradictions"], "rows": ["pool_2d_6x3"], "validation": "executed", "run": "gate-c-final", "fixtures": ["probability_cases.h:PROB_CASE_POOL_2D_6X3"], "asserts": "Classes 1/3 and 2/7, Z = 3003, meta {3, 1, 14}."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.ExactAgreementTests.test_forced_cells_are_proven",
+      "disposition": "port",
+      "baseline": "4x1 with clues 1 and 0: [null, 1.0, 0.0, null], proven mine 1, proven safe 2.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::probability_cases: exact odds, proofs and meta; contradictions"], "rows": ["forced_cells_4x1"], "validation": "executed", "run": "gate-c-final", "fixtures": ["probability_cases.h:PROB_CASE_FORCED_CELLS_4X1"], "asserts": "Exact endpoints only for proven cells."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.ExactAgreementTests.test_overlapping_clue_deductions_match_brute_force",
+      "disposition": "port",
+      "baseline": "1-2-1 wall: proofs are truthful and equal brute-force certainties.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::probability_cases: exact odds, proofs and meta; contradictions"], "rows": ["overlap_121_wall"], "validation": "executed", "run": "gate-c-final", "fixtures": ["probability_cases.h:PROB_CASE_OVERLAP_121_WALL"], "asserts": "Proof lists and odds match the fixture."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.ExactAgreementTests.test_no_frontier_uses_uniform_prior",
+      "disposition": "port",
+      "baseline": "No clues: 7/20 everywhere, unconstrained 20; 0 mines proves all safe; 9 of 9 proves all mines.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::probability_cases: exact odds, proofs and meta; contradictions"], "rows": ["prior_5x4_7", "prior_3x3_none", "prior_3x3_all"], "validation": "executed", "run": "gate-c-final", "fixtures": ["probability_cases.h:PROB_CASE_PRIOR_5X4_7", "probability_cases.h:PROB_CASE_PRIOR_3X3_NONE", "probability_cases.h:PROB_CASE_PRIOR_3X3_ALL"], "asserts": "Uniform class, meta frontier 0, proofs for the all/no-mine boards."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.ExactAgreementTests.test_all_cells_revealed",
+      "disposition": "port",
+      "baseline": "Every cell revealed: exact, all probabilities null.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::probability_cases: exact odds, proofs and meta; contradictions"], "rows": ["all_revealed_2x2"], "validation": "executed", "run": "gate-c-final", "fixtures": ["probability_cases.h:PROB_CASE_ALL_REVEALED_2X2"], "asserts": "No hidden cell, no class, no proof, Z = 1."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.ExactAgreementTests.test_long_chain_component_is_exact_without_recursion",
+      "disposition": "port",
+      "baseline": "3001x1 alternating chain with 751 mines: exact, one component, mines 0,4,...,3000 and safe 2,6,...,2998.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::probability_cases: exact odds, proofs and meta; contradictions", "tests/c/test_probability.c::3001-cell chain is exact without recursion"], "rows": ["chain_3001_exact"], "validation": "executed", "run": "gate-c-final", "note": "gate-c-final ran it natively and as WebAssembly under Wasmtime and Node (1 MiB stack).", "fixtures": ["probability_cases.h:PROB_CASE_CHAIN_3001_EXACT"], "asserts": "Parametric clue run and proof runs; must also run under Wasmtime/Node with the 1 MiB stack (iterative DP)."}
+      ],
+      "notes": "Solver dimensions are independent of the 5..80 game limits: the C solver API must accept thin boards such as 3001x1 and 72x1."
+    },
+    {
+      "id": "tests.test_probability.InvalidInputTests.test_contradictory_observations_raise",
+      "disposition": "port",
+      "baseline": "Seven contradictory observations (verified impossible by brute force) raise InconsistentBoardError.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::probability_cases: exact odds, proofs and meta; contradictions"], "rows": ["inconsistent_clue_exceeds_neighbours", "inconsistent_corner_clue", "inconsistent_adjacent_clues", "inconsistent_too_many_mines", "inconsistent_forced_mines_exceed_total", "inconsistent_total_unreachable", "inconsistent_overlapping_counts"], "validation": "executed", "run": "gate-c-final", "fixtures": ["probability_cases.h:PROB_CASE_INCONSISTENT_CLUE_EXCEEDS_NEIGHBOURS", "probability_cases.h:PROB_CASE_INCONSISTENT_CORNER_CLUE", "probability_cases.h:PROB_CASE_INCONSISTENT_ADJACENT_CLUES", "probability_cases.h:PROB_CASE_INCONSISTENT_TOO_MANY_MINES", "probability_cases.h:PROB_CASE_INCONSISTENT_FORCED_MINES_EXCEED_TOTAL", "probability_cases.h:PROB_CASE_INCONSISTENT_TOTAL_UNREACHABLE", "probability_cases.h:PROB_CASE_INCONSISTENT_OVERLAPPING_COUNTS"], "asserts": "Each yields the inconsistent error status, never a success-shaped or unavailable result."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.InvalidInputTests.test_inconsistency_is_a_value_error",
+      "disposition": "split",
+      "baseline": "InconsistentBoardError subclasses ValueError.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::error statuses: buffers, limits, inconsistency and budgets are distinct"], "validation": "executed", "run": "gate-c-final", "asserts": "Inconsistent and malformed are both errors (no odds, no proofs) yet distinguishable from each other and from budget-limited unavailable results."}
+      ],
+      "retired": [{"aspect": "Python exception hierarchy", "rationale": "C reports status codes; the retained contract is the error classification."}]
+    },
+    {
+      "id": "tests.test_probability.InvalidInputTests.test_malformed_arguments_raise_value_error",
+      "disposition": "split",
+      "baseline": "Bad dimensions, totals, clue indices/values, bool/str/float/list inputs, negative/NaN budgets and a non-RNG object raise ValueError.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::malformed_observations: every C-representable case is rejected"], "validation": "executed", "run": "gate-c-final", "note": "Out-of-board clue indices are refused by the observation builder; the two negative-budget rows are skipped as unrepresentable (see retired).", "fixtures": ["probability_cases.h:MALFORMED_OBSERVATIONS"], "asserts": "Each C-representable case returns the malformed status, including the C-specific duplicate sparse clue."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/abi.test.mjs::solve requests accept only public fields and routing numbers", "tests/js/abi.test.mjs::observation headers are checked before sizing a result", "tests/js/engine-client.test.mjs::the real worker answers only well-formed public observation requests"], "validation": "executed", "run": "gate-js", "note": "Observations are binary now: Python type cases become arrays/typed-array views/bad magic or length (refused in JS) and clue 9, width 0 or a revealed-count mismatch (refused by C inside the worker).", "asserts": "Worker/adapter rejects bool clue values, string indices, fractional totals, boolean widths and non-array observations before marshalling."}
+      ],
+      "retired": [{"aspect": "rng must provide getrandbits()", "rationale": "No injectable RNG object; sampling seeds are integers derived from the observation or supplied by tests."}, {"aspect": "Negative node/sample budgets (node_budget -1, sample_budget -5)", "rationale": "Unrepresentable: ms_infer_limits.node_budget and sample_budget are uint32, and the worker always solves with ms_init_default_limits (no caller-supplied budgets), so the two fixture rows are skipped. Negative and NaN time budgets remain representable and are rejected (malformed_observations rows time_budget_negative/time_budget_nan; test_runtime.c limits validation)."}]
+    },
+    {
+      "id": "tests.test_probability.PublicInformationOnlyTests.test_signature_has_no_secret_or_flag_inputs",
+      "disposition": "split",
+      "baseline": "calculate_probabilities accepts only width, height, total, revealed and keyword-only budgets/rng; flags/mines/layout/board keywords are TypeErrors.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::solver_input_is_public_observation_only"], "validation": "executed", "run": "gate-c-1", "asserts": "The solver request type carries only dimensions, mine total, revealed clues, budgets and seed; the engine builds it from the public observation export."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/abi.test.mjs::solve requests accept only public fields and routing numbers", "tests/js/engine-client.test.mjs::the real worker answers only well-formed public observation requests", "tests/js/engine-client.test.mjs::a playing position is solved by the worker and accepted by C"], "validation": "executed", "run": "gate-js", "asserts": "Messages with flags/mines/layout/board fields are rejected and the worker never receives game memory."}
+      ],
+      "retired": [{"aspect": "Python signature introspection", "rationale": "Re-expressed as the C request type and worker message schema."}]
+    },
+    {
+      "id": "tests.test_probability.PublicInformationOnlyTests.test_layouts_with_the_same_observation_get_the_same_answer",
+      "disposition": "port",
+      "baseline": "Two different 4x4 layouts with identical clues give identical results.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::public_equivalence_4x4: identical observations, identical answers"], "validation": "executed", "run": "gate-c-final", "fixtures": ["probability_cases.h:PUBLIC_EQUIVALENCE_4X4_SHOWN", "probability_cases.h:PUBLIC_EQUIVALENCE_4X4_LAYOUT_A", "probability_cases.h:PUBLIC_EQUIVALENCE_4X4_LAYOUT_B", "probability_cases.h:PROB_CASE_PUBLIC_EQUIVALENCE_4X4"], "asserts": "Clues recomputed from both layouts are equal; both solves are identical and match the fixture odds."},
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::public_equivalence_game_5x5"], "validation": "executed", "run": "gate-c-1", "fixtures": ["probability_cases.h:PUBLIC_EQUIVALENCE_GAME_LAYOUT_A", "probability_cases.h:PUBLIC_EQUIVALENCE_GAME_LAYOUT_B", "probability_cases.h:PROB_CASE_PUBLIC_EQUIVALENCE_GAME_5X5"], "asserts": "C addition: two games whose layouts differ only in unconstrained cells export byte-identical public state and observation after the same reveal."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.LargeBoardTests.test_uniform_prior_on_largest_board_does_not_overflow",
+      "disposition": "port",
+      "baseline": "Empty 80x80 with 3200 mines: exact, every probability exactly 0.5.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::probability_cases: exact odds, proofs and meta; contradictions", "tests/c/test_probability.c::huge binomials cancel exactly; near-certain cells are not proofs"], "rows": ["prior_80x80_half"], "validation": "executed", "run": "gate-c-final", "fixtures": ["probability_cases.h:PROB_CASE_PRIOR_80X80_HALF"], "asserts": "Single class 1/2 over all 6400 cells; Z = C(6400,3200)."},
+        {"layer": "c-bigint", "status": "mapped", "tests": ["tests/c/test_bigint.c::binomials: fixtures, u64 Pascal, symmetry, recurrence, Vandermonde, C(6400,3200)", "tests/c/test_bigint.c::ratios: fixtures, endpoint guard, ESS, subnormals, overflow, ties, literals"], "validation": "executed", "run": "gate-c-1", "fixtures": ["bigint_cases.h:BIGINT_BINOMIALS", "bigint_cases.h:BIGINT_RATIOS"], "asserts": "C(6400,3200) limbs (6394 bits) and prior_half_ratio converts to exactly 0.5."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.LargeBoardTests.test_large_played_board_is_exact_bounded_and_consistent",
+      "disposition": "port",
+      "baseline": "Two 80x80 played boards (20% mines, 40 openings) are exact within 1.5 s (< 3 s wall), sum to the mine total, proofs agree with the layout, pool non-empty.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::large_board_cases: two played 80x80 boards are exact", "tests/c/test_probability.c::time budgets: phase deadlines on a fake clock"], "rows": ["played_80x80_seed0", "played_80x80_seed1"], "validation": "executed", "run": "gate-c-final", "note": "Values are bit-exact (stronger than 1e-12). The baseline's < 3 s wall-clock bound is replaced by fake-clock budgets here and by real-browser responsiveness (finding wall-clock-assertions).", "fixtures": ["large_boards.h:LARGE_CASE_PLAYED_80X80_SEED0", "large_boards.h:LARGE_CASE_PLAYED_80X80_SEED1"], "asserts": "Exact with default budgets; proofs equal the fixture (and agree with the '*' layout); odds within 1e-12 of the reference doubles; meta {188,37,4264} and {162,35,4649}."},
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/odds.spec.mjs::@solver an 80x80 position is solved off the main thread"], "validation": "executed", "run": "gate-browser", "note": "A seeded 80x80 game in the browser, not the frozen played boards; asserts main-thread gaps < 500 ms while the worker solves.", "asserts": "Worker solve of an 80x80 position does not block input; replaces the wall-clock bound."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.LargeBoardTests.test_huge_binomial_weights_keep_frontier_odds_exact",
+      "disposition": "port",
+      "baseline": "One corner 1 on 80x80 with 2000 mines: frontier exactly 1/3, cell 6399 exactly 1999/6396, sum 2000.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::probability_cases: exact odds, proofs and meta; contradictions", "tests/c/test_probability.c::huge binomials cancel exactly; near-certain cells are not proofs"], "rows": ["corner_80x80_2000"], "validation": "executed", "run": "gate-c-final", "fixtures": ["probability_cases.h:PROB_CASE_CORNER_80X80_2000"], "asserts": "Classes 1/3 and 1999/6396 bit-exact; Z = 3*C(6396,1999)."},
+        {"layer": "c-bigint", "status": "mapped", "tests": ["tests/c/test_bigint.c::ratios: fixtures, endpoint guard, ESS, subnormals, overflow, ties, literals"], "validation": "executed", "run": "gate-c-1", "fixtures": ["bigint_cases.h:BIGINT_RATIOS"], "asserts": "corner_pool_ratio and corner_frontier_ratio convert from multi-thousand-bit operands."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.LargeBoardTests.test_near_certain_cells_are_not_proven_and_impossible_cells_are",
+      "disposition": "port",
+      "baseline": "Ring of eight 1s on 80x80 with 4 mines: 8 pinwheel cells ~2e-11 (> 0), y < 1 yet ~1-5e-11, impossible ring cells proven safe, no proven mines.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::probability_cases: exact odds, proofs and meta; contradictions", "tests/c/test_probability.c::huge binomials cancel exactly; near-certain cells are not proofs"], "rows": ["near_certain_80x80"], "validation": "executed", "run": "gate-c-final", "fixtures": ["probability_cases.h:PROB_CASE_NEAR_CERTAIN_80X80"], "asserts": "Classes 0, 1/Z, C(6374,2)/Z and (Z-2)/Z with Z = 43160345877; proven safe = the 8 zero cells; no proven mines."},
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/odds.spec.mjs::near-certain exact odds read <1% and >99%; only proofs get certainty icons"], "validation": "executed", "run": "gate-browser", "note": "Uses forged exact values (0.004/0.996) that C validates, not the 80x80 ring observation; the ring's values are covered in C.", "asserts": "Exact non-certain extremes are labelled <1%/>99%, never 0%/100%, and carry no proof marker."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.LargeBoardTests.test_exact_ratios_reserve_endpoints_for_certainty",
+      "disposition": "port",
+      "baseline": "_ratio keeps 0/1 for exact certainty, maps 1/10^400 to > 0 and (10^400-1)/10^400 to < 1 for exact results only.",
+      "destinations": [
+        {"layer": "c-bigint", "status": "mapped", "tests": ["tests/c/test_bigint.c::ratios: fixtures, endpoint guard, ESS, subnormals, overflow, ties, literals"], "validation": "executed", "run": "gate-c-1", "fixtures": ["bigint_cases.h:BIGINT_RATIOS"], "asserts": "Bit-exact guard values (smallest subnormal, 1-2^-53) for exact results; unguarded 0.0/1.0 for approximate; (10^400 div 3)/10^400 within 5e-16 of 1/3."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.SamplingTests.test_sampling_estimates_agree_with_brute_force",
+      "disposition": "port",
+      "baseline": "Seeds 0..39 with node_budget 0 and 4000 samples: approximate (or exact with no components), ESS >= 50, every cell within 5*0.5/sqrt(ESS) of brute force, truthful proofs, mine sum exact.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::sampling_cases: statuses, reasons, proofs, ESS and 5-sigma estimates"], "rows": ["random_seed_0_sampled", "random_seed_5_sampled", "random_seed_11_sampled", "random_seed_21_sampled", "random_seed_39_sampled", "random_seed_54_sampled", "random_seed_74_sampled", "random_seed_82_sampled", "random_seed_93_sampled", "random_seed_126_sampled", "random_seed_128_sampled", "random_seed_131_sampled", "random_seed_134_sampled"], "validation": "executed", "run": "gate-c-final", "fixtures": ["sampling_cases.h:SAMPLING_CASES"], "asserts": "Ground-truth odds with the documented 5-sigma tolerance and a fixed C seed; never Python's random stream."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.SamplingTests.test_sampled_certainties_are_not_reported_as_proofs",
+      "disposition": "port",
+      "baseline": "Sampled 3001-cell chain: approximate, estimates exactly 0.0/1.0 by i%4, yet no proofs.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::sampling_cases: statuses, reasons, proofs, ESS and 5-sigma estimates", "tests/c/test_probability.c::chain_3001_sampled: sampled 0/1 estimates are never proofs"], "rows": ["chain_3001_sampled"], "validation": "executed", "run": "gate-c-final", "fixtures": ["sampling_cases.h:SAMPLING_CASE_CHAIN_3001_SAMPLED"], "asserts": "Approximate, proofs empty, estimates equal the exact 0/1 truth, sum 751."},
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/odds.spec.mjs::sampled endpoints read ~0% and ~100% and never look proven"], "validation": "executed", "run": "gate-browser", "asserts": "Estimated endpoints are never presented as certain."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.SamplingTests.test_injected_rng_makes_sampling_deterministic",
+      "disposition": "port",
+      "baseline": "Two runs with the same injected seed give identical results (elapsed_ms ignored).",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::sampling is deterministic for a seed; the default seed is the observation's", "tests/c/test_probability.c::deterministic results are bit-identical on every runtime"], "validation": "executed", "run": "gate-c-final", "note": "Uses the genuinely sampled random_seed_134 observation (samples > 0 asserted), resolving finding vacuous-sampling-determinism; cross-runtime digests pin native/Wasmtime/Node parity.", "fixtures": ["sampling_cases.h:SAMPLING_CASE_RANDOM_SEED_134_SAMPLED"], "asserts": "Same C seed twice gives identical status, probabilities, proofs, samples and ESS; native and WASM runs agree bit for bit."}
+      ],
+      "notes": "Finding: the baseline used random_observation(11), which propagation solves completely, so no sample was drawn; use an observation that really samples."
+    },
+    {
+      "id": "tests.test_probability.SamplingTests.test_default_rng_is_reproducible",
+      "disposition": "port",
+      "baseline": "Without an injected RNG the observation-derived seed reproduces the same probabilities.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::sampling is deterministic for a seed; the default seed is the observation's", "tests/c/test_runtime.c::rt_hash64 and ms_obs_hash known answers"], "validation": "executed", "run": "gate-c-final", "note": "The runtime hash known answers and the solver's seeded and default-seed runs all ran in gate-c-final.", "fixtures": ["sampling_cases.h:SAMPLING_CASE_RANDOM_SEED_134_SAMPLED"], "asserts": "The C seed is derived only from the public observation; repeated solves and native/WASM runs agree."}
+      ],
+      "notes": "Same vacuity finding as test_injected_rng_makes_sampling_deterministic. The C derivation need not match Python's SHA-256 seeding."
+    },
+    {
+      "id": "tests.test_probability.SamplingTests.test_low_node_budget_mixes_exact_and_sampled_components",
+      "disposition": "port",
+      "baseline": "node_budget 2: approximate with >= 1 exact and >= 1 sampled component; estimates within tolerance; truthful proofs.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::sampling_cases: statuses, reasons, proofs, ESS and 5-sigma estimates", "tests/c/test_probability.c::node and retained-entry budgets fall back to sampling soundly"], "rows": ["mixed_exact_and_sampled"], "validation": "executed", "run": "gate-c-final", "note": "Pins the baseline node accounting (nodes == 3).", "fixtures": ["sampling_cases.h:SAMPLING_CASE_MIXED_EXACT_AND_SAMPLED"], "asserts": "Requires the baseline node accounting (one node per state/group-count expansion)."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.SamplingTests.test_no_sampling_budget_is_unavailable",
+      "disposition": "port",
+      "baseline": "node 0, sample 0: unavailable, reason sampling_budget_exhausted, 0 samples, all hidden null.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::sampling_cases: statuses, reasons, proofs, ESS and 5-sigma estimates", "tests/c/test_probability.c::error statuses: buffers, limits, inconsistency and budgets are distinct"], "rows": ["no_sampling_budget"], "validation": "executed", "run": "gate-c-final", "note": "Status, reason, empty proofs and value-less hidden cells are asserted. For every zero-sample-budget row, which includes no_sampling_budget, check_sampling_result (test_probability.c lines 948-957) asserts samples == 0, sample_attempts == 0 and no ESS (the baseline's meta samples == 0); line 946 bounds attempts by the budget and samples by the attempts for every row. On 2026-10-01T06:35Z the probability owner confirmed this as the requested explicit assertion, test-only with the solver unchanged. A probe build showed the branch executing for this row and for unavailable_keeps_logical_proofs (both budgets 0), and the probability suite passed on native, Wasmtime and Node. The owner's identifier sampling_cases/no_sampling_budget is not printed by the runner; the printed label is the umbrella above, with this row.", "fixtures": ["sampling_cases.h:SAMPLING_CASE_NO_SAMPLING_BUDGET"], "asserts": "RNG-independent status/reason; no invented odds."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.SamplingTests.test_unavailable_still_reports_logical_proofs",
+      "disposition": "port",
+      "baseline": "Unavailable result still proves the forced mine 12 with probability 1.0.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::sampling_cases: statuses, reasons, proofs, ESS and 5-sigma estimates", "tests/c/test_probability.c::time budgets: phase deadlines on a fake clock"], "rows": ["unavailable_keeps_logical_proofs"], "validation": "executed", "run": "gate-c-final", "fixtures": ["sampling_cases.h:SAMPLING_CASE_UNAVAILABLE_KEEPS_LOGICAL_PROOFS"], "asserts": "Proof lists exactly match; only proven cells carry a value."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.SamplingTests.test_too_few_effective_samples_is_unavailable",
+      "disposition": "port",
+      "baseline": "5 proposals: unavailable, insufficient_effective_samples, ESS < 50.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::sampling_cases: statuses, reasons, proofs, ESS and 5-sigma estimates"], "rows": ["too_few_effective_samples"], "validation": "executed", "run": "gate-c-final", "fixtures": ["sampling_cases.h:SAMPLING_CASE_TOO_FEW_EFFECTIVE_SAMPLES"], "asserts": "RNG-independent: all five weights are equal, so ESS is exactly 5."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.SamplingTests.test_globally_incompatible_samples_are_unavailable",
+      "disposition": "port",
+      "baseline": "The exact solve proves all 48 cells; with 12 proposals the sampled solve is unavailable (no_globally_compatible_samples) with no proofs.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::probability_cases: exact odds, proofs and meta; contradictions"], "rows": ["chain_board_12_total_36"], "validation": "executed", "run": "gate-c-final", "fixtures": ["probability_cases.h:PROB_CASE_CHAIN_BOARD_12_TOTAL_36"], "asserts": "Exact: every hidden cell proven."},
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::sampling_cases: statuses, reasons, proofs, ESS and 5-sigma estimates", "tests/c/test_probability.c::globally incompatible samples are unavailable, never an inconsistency proof"], "rows": ["globally_incompatible"], "validation": "executed", "run": "gate-c-final", "note": "16 explicit seeds: always unavailable with 12 samples, at least 15 of them no_globally_compatible_samples.", "fixtures": ["sampling_cases.h:SAMPLING_CASE_GLOBALLY_INCOMPATIBLE"], "asserts": "Always unavailable with empty proofs; reason no_globally_compatible_samples except for a 2^-12 stream (insufficient ESS); pick a C seed on the incompatible path."}
+      ]
+    },
+    {
+      "id": "tests.test_probability.SamplingTests.test_large_connected_component_is_time_bounded",
+      "disposition": "port",
+      "baseline": "80x80 lattice clues, budgets 0.3 s and 1.0 s: approximate or unavailable within budget+0.5 s, frontier > 1000, truthful proofs.",
+      "destinations": [
+        {"layer": "c-probability", "status": "mapped", "tests": ["tests/c/test_probability.c::sampling_cases: statuses, reasons, proofs, ESS and 5-sigma estimates"], "rows": ["lattice_300ms", "lattice_1000ms"], "validation": "executed", "run": "gate-c-final", "note": "Fake clock advancing 0.01 ms per reading: elapsed <= budget + 500 ms on that clock, frontier > 1000, proofs consistent with the layout.", "fixtures": ["sampling_cases.h:SAMPLING_CASE_LATTICE_300MS", "sampling_cases.h:SAMPLING_CASE_LATTICE_1000MS", "large_boards.h:LARGE_CASE_LATTICE_80X80_SEED4"], "asserts": "Accepted statuses/reasons, frontier_cells > 1000, proofs consistent with the '*' layout."},
+        {"layer": "c-runtime", "status": "mapped", "tests": ["tests/c/test_runtime.c::injected clock is finite and monotonic", "tests/c/test_runtime.c::amortized deadline checks", "tests/c/test_probability.c::time budgets: phase deadlines on a fake clock", "tests/c/test_probability.c::deadline injection at every clock check: valid, sound answers", "tests/c/test_probability.c::node and retained-entry budgets fall back to sampling soundly", "tests/c/test_probability.c::memory budgets: exhaustion is an unavailable answer, never an error"], "validation": "executed", "run": "gate-c-final", "note": "The runtime clock tests and the solver budget tests all ran in gate-c-final.", "asserts": "Deterministic deadline/node/memory exhaustion with the injected clock; wall-clock bounds stay a separate generous check."},
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/odds.spec.mjs::@solver a hard 80x80 lattice position is budget-limited and never blocks input"], "validation": "executed", "run": "gate-browser", "note": "Builds the same kind of lattice observation in the browser (seeded layout, lattice cells revealed) rather than loading the frozen map.", "asserts": "UI input proceeds while the worker hits the budget."}
+      ]
+    },
+    {
+      "id": "tests.test_autosolve.DeductionBatchTests.test_flags_mines_and_corrects_safe_flags_in_one_revision",
+      "disposition": "port",
+      "baseline": "Batch safe [15,17], mines [16,18]: one revision; 15/17 revealed and unflagged; 16, 18 and the unrelated flag 24 flagged; no layout disclosed.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/deduce_flags_and_corrects_safe_flags"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_DEDUCE_FLAGS_AND_CORRECTS_SAFE_FLAGS"], "asserts": "Deduction step outcome, revision +1, render."}
+      ]
+    },
+    {
+      "id": "tests.test_autosolve.DeductionBatchTests.test_all_safe_flags_are_removed_before_zero_flood",
+      "disposition": "port",
+      "baseline": "Safe flags are cleared before flooding so no safe region stays blocked; flags end at 0.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/deduce_clears_safe_flags_before_flood"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_DEDUCE_CLEARS_SAFE_FLAGS_BEFORE_FLOOD"], "asserts": "Cells 5, 6, 12, 13 revealed; flags 0; one revision."}
+      ]
+    },
+    {
+      "id": "tests.test_autosolve.DeductionBatchTests.test_empty_or_already_flagged_deductions_are_noops",
+      "disposition": "port",
+      "baseline": "Empty batches and batches of already-flagged mines (even duplicated) are no-ops.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/deduce_empty_or_already_flagged_noop", "tests/c/test_game.c::deductions: list checks, duplicates, wrong proofs use REVEAL semantics"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_DEDUCE_EMPTY_OR_ALREADY_FLAGGED_NOOP"], "asserts": "Both batches no-op; revision and flags unchanged."}
+      ]
+    },
+    {
+      "id": "tests.test_autosolve.DeductionBatchTests.test_batch_can_win_without_revealing_mines",
+      "disposition": "port",
+      "baseline": "One batch of all safe cells and both mines wins at revision 2 with 23 revealed and no explosion.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/deduce_batch_wins"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_DEDUCE_BATCH_WINS"], "asserts": "Won, revision 2, flags 2, revealed 23."}
+      ]
+    },
+    {
+      "id": "tests.test_autosolve.DeductionBatchTests.test_stale_and_invalid_deductions_never_partially_apply",
+      "disposition": "split",
+      "baseline": "Stale revision, out-of-range/negative/bool indices, overlapping lists, revealed cells and bad revisions all raise without any partial application.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/deduce_stale_and_invalid", "tests/c/test_game.c::deductions: list checks, duplicates, wrong proofs use REVEAL semantics"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_DEDUCE_STALE_AND_INVALID"], "asserts": "All-or-nothing validation; index 2^32+16 (C addition) must not truncate onto mine 16."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::autosolve takes only generation and revision and needs an accepted result"], "validation": "executed", "run": "gate-js", "note": "No JS entry point accepts deduction lists: proof lists of any kind ([true], 2^32+16) are refused as invalid_request and non-integer revisions as invalid_revision.", "asserts": "[true] indices and true/1.5/'1' revisions are rejected before marshalling."}
+      ],
+      "retired": [{"aspect": "1.0 revision rejected as a float", "rationale": "Indistinguishable from 1 in JavaScript."}]
+    },
+    {
+      "id": "tests.test_autosolve.DeductionBatchTests.test_first_move_and_terminal_state_stay_player_controlled",
+      "disposition": "port",
+      "baseline": "A batch before the first reveal raises game_not_started; after a loss it raises game_over.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/deduce_first_move_and_terminal"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_DEDUCE_FIRST_MOVE_AND_TERMINAL"], "asserts": "Error codes and unchanged states."},
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/autosolve.spec.mjs::autosolve waits for the first reveal"], "validation": "executed", "run": "gate-browser", "asserts": "An enabled autosolve preference does nothing until the player's first reveal."}
+      ]
+    },
+    {
+      "id": "tests.test_autosolve.AutosolveApiTests.test_applies_only_proven_moves_for_every_solver_status",
+      "disposition": "port",
+      "baseline": "For exact, approximate and unavailable results with proofs safe [15], mines [16], the batch reveals 15 and flags 16 only, revision +1, still playing.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::engine_results/autosolve_proofs_exact", "tests/c/test_api.c::engine_results/autosolve_proofs_approximate", "tests/c/test_api.c::engine_results/autosolve_proofs_unavailable"], "validation": "executed", "run": "gate-c-1", "fixtures": ["engine_cases.h:ENGINE_RESULT_CASES/autosolve_proofs_exact", "engine_cases.h:ENGINE_RESULT_CASES/autosolve_proofs_approximate", "engine_cases.h:ENGINE_RESULT_CASES/autosolve_proofs_unavailable"], "asserts": "Accepted result; batch board, revision 2."}
+      ],
+      "transport": "HTTP 200 and JSON headers disappear."
+    },
+    {
+      "id": "tests.test_autosolve.AutosolveApiTests.test_sampled_endpoints_are_not_automatic_moves",
+      "disposition": "port",
+      "baseline": "Approximate result with sampled 0.0 on a mine and 1.0 on a safe cell and no proofs: nothing is played.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::engine_results/autosolve_sampled_endpoints", "tests/c/test_api.c::latest accepted result replaces a complete one (approximate, then unavailable)"], "validation": "executed", "run": "gate-c-1", "fixtures": ["engine_cases.h:ENGINE_RESULT_CASES/autosolve_sampled_endpoints"], "asserts": "Accepted, batch is a no-op, revision stays 1."},
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/autosolve.spec.mjs::sampled 0% and 100% estimates are never played"], "validation": "executed", "run": "gate-browser", "asserts": "Autosolve acts only on proof lists."}
+      ]
+    },
+    {
+      "id": "tests.test_autosolve.AutosolveApiTests.test_reuses_odds_and_invalidates_cache_after_the_batch",
+      "disposition": "port",
+      "baseline": "Autosolve reuses the cached odds for the revision (one solver call), the batch invalidates the cache, and the next odds call solves the new public observation.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::autosolve_reuses_cached_result"], "validation": "executed", "run": "gate-c-1", "fixtures": ["engine_cases.h:ENGINE_RESULT_CASES/autosolve_proofs_exact"], "asserts": "Cached current-revision result feeds the batch without a new solve; afterwards the cache is empty and the exported observation is the post-batch one."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::autosolve: one atomic batch per revision, duplicates refused, pause, resume after a manual move"], "validation": "executed", "run": "gate-js", "asserts": "Worker solve count is 1 before the batch and 2 after the next odds request."}
+      ]
+    },
+    {
+      "id": "tests.test_autosolve.AutosolveApiTests.test_duplicate_or_stale_batches_do_not_toggle_flags_back",
+      "disposition": "port",
+      "baseline": "Repeating a batch for the old revision is stale with the latest state; flags are not toggled back; no extra solve.",
+      "transport": "The 409 status disappears; stale_revision, with the latest state, remains the C/JS code.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::duplicate_batch_is_stale"], "validation": "executed", "run": "gate-c-1", "fixtures": ["engine_cases.h:ENGINE_RESULT_CASES/autosolve_proofs_exact"], "asserts": "Second batch at revision 1 -> stale_revision with the latest state (flags still 1); proofs are never re-applied."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::autosolve: one atomic batch per revision, duplicates refused, pause, resume after a manual move", "tests/js/engine-client.test.mjs::autosolve takes only generation and revision and needs an accepted result"], "validation": "executed", "run": "gate-js", "asserts": "Request generation guards drop duplicates."}
+      ]
+    },
+    {
+      "id": "tests.test_autosolve.AutosolveApiTests.test_move_during_calculation_invalidates_the_whole_batch",
+      "disposition": "port",
+      "baseline": "A flag made while the solver runs makes the batch stale: nothing from it is applied.",
+      "transport": "The 409 status disappears; the stale batch is a stale_revision conflict in C/JS.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::late_result_for_old_revision_rejected"], "validation": "executed", "run": "gate-c-1", "fixtures": ["engine_cases.h:ENGINE_RESULT_CASES/autosolve_proofs_exact"], "asserts": "Accepting/applying a result computed for revision 1 after the game moved to 2 fails without changes."},
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/autosolve.spec.mjs::a move during a slow solve wins; the abandoned solve never plays", "tests/js/browser/autosolve.spec.mjs::turning autosolve off before the answer arrives plays nothing"], "validation": "executed", "run": "gate-browser", "asserts": "With a forced slow worker the move completes first and the late batch is discarded."}
+      ]
+    },
+    {
+      "id": "tests.test_autosolve.AutosolveApiTests.test_revision_only_body_rejects_client_supplied_proofs",
+      "disposition": "split",
+      "baseline": "The autosolve endpoint accepts only {revision}; invalid revisions, missing/unknown fields (e.g. proven_safe), GET and query strings are rejected without solving.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::autosolve_applies_only_engine_validated_proofs"], "validation": "executed", "run": "gate-c-1", "note": "Runs every ENGINE_RESULT_CASES row (printed as engine_results/<row>): rejected results leave nothing to apply.", "fixtures": ["engine_cases.h:ENGINE_RESULT_CASES"], "asserts": "The batch path applies proofs only from a result that passed engine validation for the current revision; there is no entry point taking caller-supplied proof lists."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::autosolve takes only generation and revision and needs an accepted result"], "validation": "executed", "run": "gate-js", "asserts": "true, null, -1, 1.5, '1' revisions are rejected; extra proof arguments are not accepted."}
+      ],
+      "retired": [{"aspect": "JSON body fields, 405 for GET, query rejection", "rationale": "HTTP routing and body rules do not exist in the static app."}]
+    },
+    {
+      "id": "tests.test_autosolve.AutosolveApiTests.test_ready_and_finished_games_do_not_run_the_solver",
+      "disposition": "port",
+      "baseline": "Autosolve on a ready game is game_not_started; on a finished game game_over with the latest state; the solver is never called.",
+      "transport": "The 400/409 statuses disappear; game_not_started and game_over remain the C/JS codes.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::autosolve_refuses_ready_and_finished_games"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_DEDUCE_FIRST_MOVE_AND_TERMINAL"], "asserts": "Error codes; no solve request is produced."}
+      ]
+    },
+    {
+      "id": "tests.test_autosolve.AutosolveApiTests.test_solver_failure_is_reported_without_playing",
+      "disposition": "split",
+      "baseline": "A crashing solver yields probability_failed and leaves the game unchanged (and is logged).",
+      "destinations": [
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::a solver trap is an explicit failure; the game survives and a retry recreates the worker"], "validation": "executed", "run": "gate-js", "asserts": "A trapping or erroring worker yields an explicit failure; no batch is applied; the game instance is intact."},
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/autosolve.spec.mjs::autosolve pauses visibly when the solver fails, without moves"], "validation": "executed", "run": "gate-browser", "asserts": "Failure is visible and autosolve pauses instead of retrying blindly."}
+      ],
+      "retired": [{"aspect": "Server error log assertion and HTTP 500", "rationale": "No server log; failures are surfaced in the UI."}]
+    },
+    {
+      "id": "tests.test_autosolve.RealAutosolveApiTests.test_real_solver_corrects_wrong_flag_and_wins",
+      "disposition": "port",
+      "baseline": "Real solver on TWO_MINES with a wrong flag on 15: one batch unflags and reveals 15, flags 16 and 18, wins.",
+      "destinations": [
+        {"layer": "c-autosolve", "status": "mapped", "tests": ["tests/c/test_autosolve.c::real_solver_corrects_wrong_flag_and_wins"], "validation": "executed", "run": "gate-c-final", "fixtures": ["game_scripts.h:GAME_SCRIPT_REAL_SOLVER_CORRECTS_WRONG_FLAG_AND_WINS", "probability_cases.h:PROB_CASE_TWO_MINES_OPENED"], "asserts": "Solve (ignoring flags) -> exact proofs equal the fixture -> one batch -> won, revision +1, flagged {16,18}."}
+      ]
+    },
+    {
+      "id": "tests.test_autosolve.RealAutosolveProgressionTests.test_repeated_batches_pause_and_resume_after_surviving_manual_move",
+      "disposition": "port",
+      "baseline": "Beginner games (seeds 0..11): batches never touch mines; a pause has exact odds strictly in (0,1) for unflagged hidden cells; a surviving manual reveal resumes autosolve; at least one game resumes.",
+      "destinations": [
+        {"layer": "c-autosolve", "status": "mapped", "tests": ["tests/c/test_autosolve.c::autosolve_scripts/beginner_seed11", "tests/c/test_autosolve.c::autosolve_scripts/beginner_seed1", "tests/c/test_autosolve.c::autosolve_scripts/beginner_seed4", "tests/c/test_autosolve.c::autosolve_scripts/beginner_seed185", "tests/c/test_api.c::fixture_proof_trajectories/beginner_seed11", "tests/c/test_api.c::fixture_proof_trajectories/beginner_seed1", "tests/c/test_api.c::fixture_proof_trajectories/beginner_seed4", "tests/c/test_api.c::fixture_proof_trajectories/beginner_seed185"], "validation": "executed", "run": "gate-c-final", "note": "gate-c-final ran both halves: test_api.c replays the frozen proof lists through the engine, and test_autosolve.c replays the same trajectories with the real solver.", "fixtures": ["autosolve_cases.h:AUTOSOLVE_SCRIPT_BEGINNER_SEED11", "autosolve_cases.h:AUTOSOLVE_SCRIPT_BEGINNER_SEED1", "autosolve_cases.h:AUTOSOLVE_SCRIPT_BEGINNER_SEED4", "autosolve_cases.h:AUTOSOLVE_SCRIPT_BEGINNER_SEED185", "autosolve_cases.h:AUTOSOLVE_PAUSE_CASES"], "asserts": "Frozen layouts replay every batch (proof lists, revision, flags, render), each pause's exact odds, the manual reveal and the resumed batches."},
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/autosolve.spec.mjs::plays proven batches, pauses at ambiguity with odds visible, resumes after a surviving move", "tests/js/browser/autosolve.spec.mjs::@solver the real solver drives autosolve until a guess is needed"], "validation": "executed", "run": "gate-browser", "asserts": "Fractional odds stay visible at the pause; a surviving reveal restarts batches."}
+      ]
+    },
+    {
+      "id": "tests.test_autosolve.RealAutosolveProgressionTests.test_largest_board_batches_never_guess",
+      "disposition": "port",
+      "baseline": "80x80 with 1280 mines from seed 19, opened at (40,40): repeated batches never lose.",
+      "destinations": [
+        {"layer": "c-autosolve", "status": "mapped", "tests": ["tests/c/test_autosolve.c::autosolve_scripts/largest_board_seed19"], "validation": "executed", "run": "gate-c-final", "fixtures": ["autosolve_cases.h:AUTOSOLVE_SCRIPT_LARGEST_BOARD_SEED19", "large_boards.h:LARGE_AUTOSOLVE_SEED19_LAYOUT_ROWS", "large_boards.h:LARGE_AUTOSOLVE_SEED19_FINAL_ROWS"], "asserts": "43 exact batches with recorded proof counts and revealed totals, final pause render; never lost."},
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/autosolve.spec.mjs::@solver autosolve on an 80x80 board keeps the page responsive"], "validation": "executed", "run": "gate-browser", "note": "Asserts responsiveness only (main-thread gaps < 1 s); one revision per batch is asserted by the C trajectory and the JS batch test.", "asserts": "Large batches do not block input; one revision per batch."}
+      ]
+    },
+    {
+      "id": "tests.test_server.StaticAndHealthTests.test_healthz",
+      "disposition": "retire",
+      "baseline": "GET /healthz returns {status: ok} with JSON headers.",
+      "retired": [{"aspect": "/healthz endpoint", "rationale": "No application server; engine readiness is a client-side state."}],
+      "replacement": {"status": "mapped", "tests": ["tests/js/browser/app.spec.mjs::an engine that cannot load is reported and can be retried", "tests/js/browser/app.spec.mjs::runs from the root with only same-site, relative requests and no API"], "validation": "executed", "run": "gate-browser", "note": "Engine readiness is a client-side state (#engine-status): ready after load, an error with Try again when the module cannot load."}
+    },
+    {
+      "id": "tests.test_server.StaticAndHealthTests.test_allowlisted_static_files",
+      "disposition": "retire",
+      "baseline": "/, /index.html, /app.js, /styles.css (query ignored) served with content types, length, nosniff and no-cache.",
+      "retired": [{"aspect": "Python static routing and headers", "rationale": "Any ordinary static host serves dist/; headers are the host's concern."}],
+      "replacement": {"status": "mapped", "tests": ["tests/js/browser/app.spec.mjs::runs from the root with only same-site, relative requests and no API", "tests/js/browser/app.spec.mjs::runs from a nested project path with only same-site, relative requests and no API", "scripts/build.mjs::verifyDist"], "validation": "executed", "run": ["audit-dist-2", "gate-browser"], "note": "verifyDist runs in `pixi run -e js build-dist` (also before test-browser): required files present, reactor and vendored corec files byte-identical, every literal HTML/CSS/JS reference relative and existing."}
+    },
+    {
+      "id": "tests.test_server.StaticAndHealthTests.test_head_sends_headers_only",
+      "disposition": "retire",
+      "baseline": "HEAD returns headers without a body.",
+      "retired": [{"aspect": "HEAD semantics", "rationale": "HTTP server behavior only."}]
+    },
+    {
+      "id": "tests.test_server.StaticAndHealthTests.test_only_allowlisted_paths_are_served",
+      "disposition": "retire",
+      "baseline": "Traversal and non-allowlisted paths (server.py, .git, README) are 404 without touching the disk.",
+      "retired": [{"aspect": "Server path allowlist", "rationale": "There is no server; only built assets are published."}],
+      "replacement": {"status": "mapped", "tests": ["scripts/build.mjs::verifyDist", "scripts/build.mjs::checkSiteFiles", "scripts/check-wasm.mjs::distFileProbes"], "validation": "executed", "run": ["audit-dist-2", "foundations-dist-1"], "note": "Static analogue of the path allowlist, added by the foundations owner at the parent's request (2026-10-01): dist/ must hold exactly the registered release files (STATIC_FILES, the reactor, corec's wasi.js and LICENSE) as regular files. A stray server.py, Python module, test, source map, README or dotfile therefore fails verifyDist, as does a missing asset. URL path handling itself stays with the static host (retired)."}
+    },
+    {
+      "id": "tests.test_server.StaticAndHealthTests.test_missing_static_file_is_a_json_404",
+      "disposition": "retire",
+      "baseline": "A missing allowlisted file is a JSON 404.",
+      "retired": [{"aspect": "JSON 404 for assets", "rationale": "Static host behavior."}],
+      "replacement": {"status": "mapped", "tests": ["tests/js/browser/app.spec.mjs::an engine that cannot load is reported and can be retried", "tests/js/browser/odds.spec.mjs::a solver that cannot load is reported, the game goes on, and Retry recovers"], "validation": "executed", "run": "gate-browser"}
+    },
+    {
+      "id": "tests.test_server.StaticAndHealthTests.test_static_routes_only_allow_get_and_head",
+      "disposition": "retire",
+      "baseline": "POST / is 405 with Allow: GET, HEAD.",
+      "retired": [{"aspect": "Method restrictions", "rationale": "HTTP server behavior only."}]
+    },
+    {
+      "id": "tests.test_server.StaticAndHealthTests.test_static_directory_is_located_next_to_server_module",
+      "disposition": "retire",
+      "baseline": "STATIC_DIR resolves next to server.py.",
+      "retired": [{"aspect": "Server static directory", "rationale": "Replaced by the build that copies assets into dist/ with relative URLs."}],
+      "replacement": {"status": "mapped", "tests": ["tests/js/browser/app.spec.mjs::runs from a nested project path with only same-site, relative requests and no API", "tests/js/browser/app.spec.mjs::the nested site redirects its bare path and keeps working", "tests/js/browser/smoke.spec.mjs::plays a first move and gets odds from the worker (nested path)", "scripts/build.mjs::verifyDist"], "validation": "executed", "run": ["audit-dist-2", "gate-browser"], "note": "Location independence is now base-path independence: WASM, worker, JS and CSS load relative to a nested path. The corec LICENSE is linked from no page; verifyDist checks it is present and byte-identical in dist/."}
+    },
+    {
+      "id": "tests.test_server.StaticAndHealthTests.test_serves_real_frontend_assets",
+      "disposition": "retire",
+      "baseline": "The real static files are served byte for byte.",
+      "retired": [{"aspect": "Python serving of static/", "rationale": "dist/ is served by any static host."}],
+      "replacement": {"status": "mapped", "tests": ["tests/js/browser/app.spec.mjs::runs from the root with only same-site, relative requests and no API", "tests/js/browser/app.spec.mjs::runs from a nested project path with only same-site, relative requests and no API", "tests/js/browser/smoke.spec.mjs::plays a first move and gets odds from the worker (root)", "tests/js/browser/smoke.spec.mjs::plays a first move and gets odds from the worker (nested path)"], "validation": "executed", "run": "gate-browser", "note": "smoke.spec runs in Chromium, Firefox and WebKit; the other specs in Chromium (mobile.spec on a Pixel 7 profile)."}
+    },
+    {
+      "id": "tests.test_server.CreateGameTests.test_create_returns_hidden_ready_state",
+      "disposition": "split",
+      "baseline": "POST /api/games returns 201 with a ready, fully hidden state, an id and a Location that GETs the same state.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::public_state_initial_values"], "validation": "executed", "run": "gate-c-1", "asserts": "New game: ready, revision 0, flags 0, elapsed 0, every cell hidden with absent clue/mine."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::createGame accepts boundary configurations and returns a hidden ready GameState"], "validation": "executed", "run": "gate-js", "asserts": "Adapter GameState for 9x8x10 equals the expected hidden shape."}
+      ],
+      "retired": [{"aspect": "201 status, id regex, Location header, GET round trip", "rationale": "No ids or HTTP resources."}]
+    },
+    {
+      "id": "tests.test_server.CreateGameTests.test_games_are_independent",
+      "disposition": "split",
+      "baseline": "Two server games have different ids and a move in one does not affect the other.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::engine_instances_are_independent"], "validation": "executed", "run": "gate-c-1", "asserts": "Two engine instances (or a new game after an old one) share no state."},
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/app.spec.mjs::each tab plays its own game", "tests/js/browser/app.spec.mjs::reload always starts a new game while preferences persist"], "validation": "executed", "run": "gate-browser", "asserts": "Confirmed decision: each tab owns its game; reload starts a new one; preferences persist."}
+      ],
+      "retired": [{"aspect": "Cross-client games addressed by id", "rationale": "Per-tab games, no sharing."}]
+    },
+    {
+      "id": "tests.test_server.CreateGameTests.test_rejects_invalid_settings",
+      "disposition": "split",
+      "baseline": "Invalid width/height/mines (ints, bools, floats, strings, null, list, object, 10**30) give the field codes; unknown/missing fields are rejected; nothing is stored.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_config_cases"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_CONFIG_CASES"], "asserts": "Integer cases and codes."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::createGame rejects values that would truncate, before marshalling", "tests/js/engine-client.test.mjs::createGame domain errors come from C in Python order"], "validation": "executed", "run": "gate-js", "note": "Unknown option keys, null and array arguments are refused as invalid_request; a missing field arrives as undefined and gets its field code.", "asserts": "true, 9.5, '9', null, [9], {}, 10.5, 1e30 are rejected with the field's code."}
+      ],
+      "retired": [{"aspect": "unknown_fields / missing_fields, store length", "rationale": "Typed function arguments replace JSON bodies; no store."}]
+    },
+    {
+      "id": "tests.test_server.CreateGameTests.test_rejects_malformed_bodies",
+      "disposition": "split",
+      "baseline": "Invalid JSON, NaN/Infinity, duplicate keys, bad encoding, deep nesting and non-object bodies are rejected.",
+      "destinations": [
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::createGame rejects values that would truncate, before marshalling", "tests/js/engine-client.test.mjs::actions reject non-integer arguments before marshalling"], "validation": "executed", "run": "gate-js", "asserts": "NaN and +/-Infinity arguments never reach WASM."}
+      ],
+      "retired": [{"aspect": "JSON parsing rules", "rationale": "No request bodies exist."}]
+    },
+    {
+      "id": "tests.test_server.CreateGameTests.test_requires_json_content_type",
+      "disposition": "retire",
+      "baseline": "Content-Type must be application/json (UTF-8).",
+      "retired": [{"aspect": "Content-Type negotiation (415)", "rationale": "HTTP-only."}]
+    },
+    {
+      "id": "tests.test_server.CreateGameTests.test_body_size_limit",
+      "disposition": "retire",
+      "baseline": "Bodies over 8 KiB are 413.",
+      "retired": [{"aspect": "Body size limit", "rationale": "HTTP-only; adapter arguments are fixed-size integers."}]
+    },
+    {
+      "id": "tests.test_server.CreateGameTests.test_content_length_rules",
+      "disposition": "retire",
+      "baseline": "Missing/chunked/invalid/duplicate/short Content-Length handling.",
+      "retired": [{"aspect": "Content-Length rules", "rationale": "HTTP-only."}]
+    },
+    {
+      "id": "tests.test_server.CreateGameTests.test_rejects_query_parameters",
+      "disposition": "retire",
+      "baseline": "POST /api/games?width=9 is unexpected_query.",
+      "retired": [{"aspect": "Query rejection", "rationale": "HTTP-only."}]
+    },
+    {
+      "id": "tests.test_server.GameActionTests.test_get_and_head_game",
+      "disposition": "split",
+      "baseline": "GET returns the created state; HEAD has the same length without a body.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::reading_state_is_side_effect_free", "tests/c/test_game.c::public_state_initial_values"], "validation": "executed", "run": "gate-c-1", "asserts": "Exporting the public state twice gives identical results and never changes the revision."}
+      ],
+      "retired": [{"aspect": "GET/HEAD semantics", "rationale": "HTTP-only."}]
+    },
+    {
+      "id": "tests.test_server.GameActionTests.test_unknown_and_malformed_game_ids",
+      "disposition": "retire",
+      "baseline": "Unknown/malformed ids are 404 game_not_found; unknown sub-paths are not_found.",
+      "retired": [{"aspect": "Ids and routes", "rationale": "No ids or URLs for games."}],
+      "replacement": {"status": "mapped", "tests": ["tests/c/test_api.c::engine_instances_are_independent", "tests/js/engine-client.test.mjs::a new game or an explicit cancel also abandons the old request", "tests/js/engine-client.test.mjs::revisions above the maximum are stale, never wrapped"], "validation": "executed", "run": ["gate-c-final", "gate-js"], "note": "The generation number replaces ids: after a new game every entry point refuses the old generation as stale_revision, even at a matching revision."}
+    },
+    {
+      "id": "tests.test_server.GameActionTests.test_wrong_methods",
+      "disposition": "retire",
+      "baseline": "Wrong HTTP methods are 405 with Allow headers.",
+      "retired": [{"aspect": "HTTP methods", "rationale": "HTTP-only."}]
+    },
+    {
+      "id": "tests.test_server.GameActionTests.test_play_to_victory",
+      "disposition": "port",
+      "baseline": "Reveal, flag, chord and reveals win at revision 10 with flags 2, the final render and the disclosed layout.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/play_to_victory"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_PLAY_TO_VICTORY"], "asserts": "Every step's state; terminal layout {16,18}; no explosion."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::play to victory through the adapter"], "validation": "executed", "run": "gate-js", "note": "Replays a seeded layout learned in-test (not the TWO_MINES fixture): flag, opening chord, reveals, one revision per change, win with every mine flagged, disclosed layout, read-back equality.", "fixtures": ["game_scripts.h:GAME_SCRIPT_PLAY_TO_VICTORY"], "asserts": "Same sequence through the real WASM via a deterministic layout hook in the test build."}
+      ]
+    },
+    {
+      "id": "tests.test_server.GameActionTests.test_losing_reports_explosion_and_layout",
+      "disposition": "port",
+      "baseline": "Wrong flag then chord: lost, exploded [16], mines [16,18], cell 15 flagged and not a mine.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/chord_with_wrong_flag_loses"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_CHORD_WITH_WRONG_FLAG_LOSES"], "asserts": "Terminal public state."},
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/board.spec.mjs::a loss shows the exploded mine, every mine and crossed-out wrong flags"], "validation": "executed", "run": "gate-browser", "asserts": "Terminal rendering of mines, explosion and wrong flags."}
+      ]
+    },
+    {
+      "id": "tests.test_server.GameActionTests.test_stale_revision_is_a_conflict_with_latest_state",
+      "disposition": "port",
+      "baseline": "Actions for revisions 0, 2, 50 are 409 stale_revision with the latest state; nothing changes.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/stale_revision_rejected", "tests/c/test_game.c::game_scripts/conflict_errors_carry_latest_state"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_STALE_REVISION_REJECTED", "game_scripts.h:GAME_SCRIPT_CONFLICT_ERRORS_CARRY_LATEST_STATE"], "asserts": "Stale errors with the latest state."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::conflicts return the latest state and never replay the move", "tests/js/engine-client.test.mjs::revisions above the maximum are stale, never wrapped"], "validation": "executed", "run": "gate-js", "asserts": "The UI receives the latest state and does not replay the move."}
+      ],
+      "transport": "409 status disappears."
+    },
+    {
+      "id": "tests.test_server.GameActionTests.test_actions_after_game_over_are_conflicts",
+      "disposition": "port",
+      "baseline": "After a loss every action is 409 game_over with the final state.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/actions_after_loss_rejected"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_ACTIONS_AFTER_LOSS_REJECTED"], "asserts": "game_over with unchanged final state."}
+      ],
+      "transport": "409 status disappears."
+    },
+    {
+      "id": "tests.test_server.GameActionTests.test_rejects_invalid_action_payloads",
+      "disposition": "split",
+      "baseline": "Invalid action/coordinate/revision values give their codes; unknown/missing fields, non-object body, wrong content type and queries are rejected; state stays ready.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/invalid_input_rejected"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_INVALID_INPUT_REJECTED"], "asserts": "Integer cases including huge coordinates (baseline 10**40, C 2^32/10^18)."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::actions reject non-integer arguments before marshalling", "tests/js/engine-client.test.mjs::out-of-bounds cells name the board ranges, checked before routing"], "validation": "executed", "run": "gate-js", "deviation": "A column of 1e40 (not a safe integer) is invalid_coordinates instead of the baseline's out_of_bounds; it is rejected before marshalling either way. Accepted by the parent on 2026-10-01T06:42Z (see reconciliation.deviations).", "asserts": "Type cases from the payload table (1, null, true, false, 1.5, '1', [0], 1e40)."}
+      ],
+      "retired": [{"aspect": "Body field/format/content-type/query rules", "rationale": "HTTP/JSON only."}]
+    },
+    {
+      "id": "tests.test_server.GameActionTests.test_noop_actions_keep_revision",
+      "disposition": "port",
+      "baseline": "Flag/reveal on a revealed cell and chord on a hidden cell return the unchanged state.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/noops_keep_revision", "tests/c/test_game.c::game_scripts/flagging_revealed_cell_is_noop"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_NOOPS_KEEP_REVISION", "game_scripts.h:GAME_SCRIPT_FLAGGING_REVEALED_CELL_IS_NOOP"], "asserts": "No-op outcomes keep the revision."},
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/board.spec.mjs::a flagged cell is explained instead of revealed; flag mode flags on click", "tests/js/browser/board.spec.mjs::a chord with the wrong flag count is explained, not played"], "validation": "executed", "run": "gate-browser", "note": "Asserts the explanation and the unchanged board; with no transport left, 'not sent' has no separate observable effect.", "asserts": "README: the page explains ignored moves under the board."}
+      ]
+    },
+    {
+      "id": "tests.test_server.GameActionTests.test_concurrent_moves_on_one_revision_apply_once",
+      "disposition": "split",
+      "baseline": "8 concurrent HTTP flags on revision 0: one 200, seven 409.",
+      "destinations": [
+        {"layer": "c-game", "status": "mapped", "tests": ["tests/c/test_game.c::game_scripts/stale_revision_rejected"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_STALE_REVISION_REJECTED"], "asserts": "Only one action per base revision applies."}
+      ],
+      "retired": [{"aspect": "Concurrent HTTP clients and server threads", "rationale": "The per-tab engine is single-threaded; calls are serialized by the event loop."}]
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_not_started_game",
+      "disposition": "port",
+      "baseline": "Odds for a ready game: status not-started, all null, no proofs, message mentions the first reveal and neighbors, solver not called.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::placeholder_not_started", "tests/c/test_runtime.c::probability result validation: approximate, unavailable, placeholders"], "validation": "executed", "run": "gate-c-1", "asserts": "Ready game yields the not-started placeholder (reason not_started) without a solve request."},
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/odds.spec.mjs::before the first reveal the panel explains why there are no odds yet"], "validation": "executed", "run": "gate-browser", "asserts": "Panel explains that the first reveal is safe."}
+      ],
+      "transport": "HTTP 200 and headers disappear."
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_playing_game_uses_only_public_observation",
+      "disposition": "port",
+      "baseline": "The solver receives (5, 5, 2, revealed clues) - flags excluded - with budgets 1.5 s / 100000 / 2000; the payload carries game id and revision.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::solve_request_uses_public_observation_and_default_budgets"], "validation": "executed", "run": "gate-c-1", "fixtures": ["game_scripts.h:GAME_SCRIPT_REVEALED_CLUES_PUBLIC_ONLY", "probability_cases.h:PROB_CASE_TWO_MINES_OPENED", "engine_cases.h:ENGINE_RESULT_CASES/base_exact"], "asserts": "Exported request: dimensions, total, clue list equal to the render digits, default budgets FIXTURE_DEFAULT_*; tagged with game generation and revision."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::a playing position is solved by the worker and accepted by C", "tests/js/solver-host.test.mjs::starts a worker with the cached module, then sends one copied public observation"], "validation": "executed", "run": "gate-js", "asserts": "Posted message contains only public fields and generation/revision/request ids."}
+      ]
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_results_are_cached_per_revision",
+      "disposition": "port",
+      "baseline": "Same revision reuses one solve; a no-op keeps the cache; a change triggers a new solve.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::cache_follows_revisions"], "validation": "executed", "run": "gate-c-1", "fixtures": ["engine_cases.h:ENGINE_RESULT_CASES/base_exact"], "asserts": "Cache hit, no-op retention, invalidation on change."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::current-revision odds are reused unless unavailable; concurrent requests share a solve"], "validation": "executed", "run": "gate-js", "asserts": "Worker solve count follows the same pattern."}
+      ]
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_stale_revision_is_a_conflict",
+      "disposition": "port",
+      "baseline": "Odds for a non-current revision are stale_revision with the latest state; no solve.",
+      "transport": "The 409 status disappears; stale_revision, with the latest state, remains the C/JS code.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::odds_for_stale_revision_rejected"], "validation": "executed", "run": "gate-c-1", "asserts": "No request for old revisions; stale error with latest state."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::stale odds requests never reach the worker"], "validation": "executed", "run": "gate-js", "asserts": "Generation/revision guard before dispatch."}
+      ]
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_revision_query_is_strict",
+      "disposition": "split",
+      "baseline": "?revision= must be one canonical non-negative integer; malformed queries are rejected with specific codes.",
+      "destinations": [
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::stale odds requests never reach the worker"], "validation": "executed", "run": "gate-js", "asserts": "-1, 1.5, NaN, Infinity, '0', true and unsafe integers are rejected before marshalling."}
+      ],
+      "retired": [{"aspect": "Query-string syntax (missing_revision, invalid_query, unknown_query_parameters, leading zeros, %2B, full-width digits)", "rationale": "No URLs; revisions are typed numbers."}]
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_finished_game",
+      "disposition": "port",
+      "baseline": "Odds for a finished game: status finished, all null, no solve.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::placeholder_finished"], "validation": "executed", "run": "gate-c-1", "asserts": "Finished placeholder (reason game_over) without a solve request."}
+      ]
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_solver_inconsistency_is_a_logged_internal_error",
+      "disposition": "split",
+      "baseline": "An inconsistent-board solver error for a real game is a 500 probability_failed without leaking details; it is logged and not cached (retry works).",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::inconsistent_result_is_engine_failure"], "validation": "executed", "run": "gate-c-1", "asserts": "A real game's observation can never be inconsistent, so an inconsistent status from the solver is an internal failure: not cached, no proofs applied, a retry solves again."},
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/odds.spec.mjs::a solver that reports an inconsistent position is a visible, retryable error", "tests/js/browser/odds.spec.mjs::a worker answer that fails validation is only an odds error; Retry starts a fresh worker"], "validation": "executed", "run": "gate-browser", "asserts": "Generic message, game unaffected, Retry odds works."}
+      ],
+      "retired": [{"aspect": "Server log content", "rationale": "No server log."}]
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_solver_crash_is_a_logged_internal_error",
+      "disposition": "split",
+      "baseline": "A crashing solver is a 500 probability_failed that hides the exception text.",
+      "destinations": [
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::a solver trap is an explicit failure; the game survives and a retry recreates the worker", "tests/js/solver-host.test.mjs::a crash during a solve fails the job and discards the worker", "tests/js/solver-host.test.mjs::fatal error replies discard the worker, non-fatal ones keep it", "tests/js/abi.test.mjs::worker error payloads round-trip; traps are always fatal"], "validation": "executed", "run": "gate-js", "asserts": "A trap is reported as a failure (never success-shaped); the worker is recreated on retry; the game instance survives."}
+      ],
+      "retired": [{"aspect": "HTTP 500 body and server log", "rationale": "No server."}]
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_malformed_solver_output_is_rejected",
+      "disposition": "split",
+      "baseline": "Non-dict, empty, placeholder status, short list, >1, NaN, bool values, bad/str indices, a cell in both lists, null message, negative/missing counts, bad elapsed or reason are rejected as probability_failed.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::engine_results/placeholder_status_finished", "tests/c/test_api.c::engine_results/short_probability_list", "tests/c/test_api.c::engine_results/probability_above_one", "tests/c/test_api.c::engine_results/probability_nan", "tests/c/test_api.c::engine_results/proof_index_out_of_range", "tests/c/test_api.c::engine_results/proof_in_both_lists", "tests/c/test_api.c::engine_results/negative_meta_count", "tests/c/test_api.c::engine_results/reason_out_of_range", "tests/c/test_api.c::engine_results/placeholder_status_not_started", "tests/c/test_api.c::engine_results/status_out_of_range", "tests/c/test_api.c::engine_results/hidden_probability_negative", "tests/c/test_api.c::engine_results/hidden_probability_infinite", "tests/c/test_api.c::engine_results/proof_index_negative", "tests/c/test_api.c::engine_results/negative_elapsed", "tests/c/test_api.c::engine_results/nan_elapsed", "tests/c/test_runtime.c::probability result validation: exact", "tests/c/test_runtime.c::probability result validation: approximate, unavailable, placeholders"], "validation": "executed", "run": "gate-c-1", "note": "The last seven engine_results rows are the C additions. Each rejected row asserts MS_ERR_INVALID_RESULT/BUFFER, an untouched input, nothing stored or cached, no autosolve batch and a byte-identical view.", "fixtures": ["engine_cases.h:ENGINE_RESULT_CASES/placeholder_status_finished", "engine_cases.h:ENGINE_RESULT_CASES/short_probability_list", "engine_cases.h:ENGINE_RESULT_CASES/probability_above_one", "engine_cases.h:ENGINE_RESULT_CASES/probability_nan", "engine_cases.h:ENGINE_RESULT_CASES/proof_index_out_of_range", "engine_cases.h:ENGINE_RESULT_CASES/proof_in_both_lists", "engine_cases.h:ENGINE_RESULT_CASES/negative_meta_count", "engine_cases.h:ENGINE_RESULT_CASES/reason_out_of_range"], "asserts": "Rejected results change nothing and are not cached (plus the C additions in the same table)."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/abi.test.mjs::worker messages are validated before any use", "tests/js/abi.test.mjs::malformed results are refused", "tests/js/solver-host.test.mjs::malformed or unexpected worker messages fail the job", "tests/js/engine-client.test.mjs::worker results are checked before C accepts them; rejected ones never touch the game"], "validation": "executed", "run": "gate-js", "note": "Results are binary now: string indices, missing keys and non-numeric elapsed become wrong lengths, unknown flag bits or reasons, NaN/negative fields and padding; messages that are not objects, have extra keys or mistyped ids/revisions are refused before any use, and refused results never reach ms_accept_result.", "asserts": "Non-object, empty, boolean values, string indices, missing keys, non-string message and non-numeric elapsed fail before reaching C."}
+      ],
+      "retired": [{"aspect": "HTTP 500 probability_failed and the server ERROR-log assertions", "rationale": "No server or log: refused results are invalid_result worker errors (never touching the game) and the UI shows a retryable odds error."}]
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_proofs_must_match_odds_and_skip_revealed_cells",
+      "disposition": "split",
+      "baseline": "Proofs on revealed cells or contradicting the odds are rejected; valid duplicate proofs are merged and sorted; extra keys dropped.",
+      "retired": [{"aspect": "HTTP 500 probability_failed and the server ERROR-log reasons ('lists revealed cell', 'whose probability is')", "rationale": "No server or log: C refuses the result with MS_ERR_INVALID_RESULT, the adapter reports an invalid_result worker error and the UI a retryable odds error. Rejection reasons were log diagnostics, not part of the public contract."}],
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::engine_results/safe_proof_on_revealed_cell", "tests/c/test_api.c::engine_results/mine_proof_on_revealed_cell", "tests/c/test_api.c::engine_results/safe_proof_with_nonzero_odds", "tests/c/test_api.c::engine_results/mine_proof_with_odds_below_one", "tests/c/test_api.c::engine_results/proof_without_odds", "tests/c/test_api.c::engine_results/proofs_normalized"], "validation": "executed", "run": "gate-c-1", "fixtures": ["engine_cases.h:ENGINE_RESULT_CASES/safe_proof_on_revealed_cell", "engine_cases.h:ENGINE_RESULT_CASES/mine_proof_on_revealed_cell", "engine_cases.h:ENGINE_RESULT_CASES/safe_proof_with_nonzero_odds", "engine_cases.h:ENGINE_RESULT_CASES/mine_proof_with_odds_below_one", "engine_cases.h:ENGINE_RESULT_CASES/proof_without_odds", "engine_cases.h:ENGINE_RESULT_CASES/proofs_normalized"], "asserts": "Accept/reject as recorded; normalized proofs [17,20]/[16]."}
+      ]
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_only_unavailable_results_may_leave_hidden_cells_unknown",
+      "disposition": "split",
+      "baseline": "Exact/approximate results need a value for every hidden cell; unavailable may leave them null (with proofs).",
+      "retired": [{"aspect": "HTTP 500 probability_failed and the server ERROR log", "rationale": "No server or log: C refuses the result with MS_ERR_INVALID_RESULT, the adapter reports an invalid_result worker error and the UI a retryable odds error."}],
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::engine_results/exact_missing_hidden_probability", "tests/c/test_api.c::engine_results/approximate_missing_hidden_probability", "tests/c/test_api.c::engine_results/unavailable_partial_with_proof", "tests/c/test_api.c::engine_results/approximate_complete"], "validation": "executed", "run": "gate-c-1", "fixtures": ["engine_cases.h:ENGINE_RESULT_CASES/exact_missing_hidden_probability", "engine_cases.h:ENGINE_RESULT_CASES/approximate_missing_hidden_probability", "engine_cases.h:ENGINE_RESULT_CASES/unavailable_partial_with_proof", "engine_cases.h:ENGINE_RESULT_CASES/approximate_complete"], "asserts": "Validity-mask rules per status."}
+      ]
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_revealed_cells_must_have_null_odds",
+      "disposition": "split",
+      "baseline": "A value on a revealed cell (even 0.0) is rejected for every status.",
+      "retired": [{"aspect": "HTTP 500 probability_failed and the server ERROR-log reason ('revealed cell 7 must have a null probability')", "rationale": "No server or log: C refuses the result with MS_ERR_INVALID_RESULT, the adapter reports an invalid_result worker error and the UI a retryable odds error. Rejection reasons were log diagnostics, not part of the public contract."}],
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::engine_results/revealed_cell_with_odds_exact", "tests/c/test_api.c::engine_results/revealed_cell_with_odds_approximate", "tests/c/test_api.c::engine_results/revealed_cell_with_odds_unavailable"], "validation": "executed", "run": "gate-c-1", "fixtures": ["engine_cases.h:ENGINE_RESULT_CASES/revealed_cell_with_odds_exact", "engine_cases.h:ENGINE_RESULT_CASES/revealed_cell_with_odds_approximate", "engine_cases.h:ENGINE_RESULT_CASES/revealed_cell_with_odds_unavailable"], "asserts": "Rejected."}
+      ]
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_unavailable_results_are_recomputed_on_retry",
+      "disposition": "port",
+      "baseline": "Unavailable results are not cached: every retry solves again; a later complete result is cached.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::unavailable_not_cached", "tests/c/test_api.c::latest accepted result replaces a complete one (approximate, then unavailable)"], "validation": "executed", "run": "gate-c-1", "asserts": "Retry issues a new solve; a complete result is then reused; proofs of a current unavailable result can still feed autosolve."},
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/odds.spec.mjs::unavailable answers are recomputed on Retry, keeping their proofs visible"], "validation": "executed", "run": "gate-browser", "asserts": "Retry recreates/re-requests the solver."}
+      ]
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_complete_results_are_reused_for_the_same_revision",
+      "disposition": "port",
+      "baseline": "Exact and approximate results are cached per revision.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::complete_results_cached"], "validation": "executed", "run": "gate-c-1", "fixtures": ["engine_cases.h:ENGINE_RESULT_CASES/base_exact", "engine_cases.h:ENGINE_RESULT_CASES/approximate_complete"], "asserts": "Second request for the revision returns the cached result without a solve."}
+      ]
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_optional_solver_diagnostics_are_forwarded",
+      "disposition": "port",
+      "baseline": "exact_components, sampled_components, sample_attempts and effective_sample_size (incl. null/0) are forwarded; internal keys are dropped.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::engine_results/diagnostics_forwarded", "tests/c/test_api.c::engine_results/diagnostic_ess_null", "tests/c/test_api.c::engine_results/diagnostic_ess_zero", "tests/c/test_api.c::engine_results/diagnostic_attempts_zero"], "validation": "executed", "run": "gate-c-1", "note": "Accepted complete rows are cached and served back byte for byte, so every diagnostic (and the ESS presence word) is preserved exactly.", "fixtures": ["engine_cases.h:ENGINE_RESULT_CASES/diagnostics_forwarded", "engine_cases.h:ENGINE_RESULT_CASES/diagnostic_ess_null", "engine_cases.h:ENGINE_RESULT_CASES/diagnostic_ess_zero", "engine_cases.h:ENGINE_RESULT_CASES/diagnostic_attempts_zero"], "asserts": "Accepted with diagnostics preserved."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/abi.test.mjs::solver results always carry the diagnostics; ESS is null unless C marks it present", "tests/js/abi.test.mjs::an exact result rebuilds the former odds payload", "tests/js/engine-client.test.mjs::a playing position is solved by the worker and accepted by C"], "validation": "executed", "run": "gate-js", "note": "Covers the baseline subcases: ESS 57.25 forwarded, absent ESS null, present zero ESS kept, sample_attempts 0 kept, internal keys not exposed.", "decision": "[49]", "asserts": "Required + optional diagnostic keys; nodes/hidden_cells/remaining_mines/propagated_cells/pair_reasoning_complete are not exposed."}
+      ]
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_absent_optional_diagnostics_stay_absent",
+      "disposition": "split",
+      "baseline": "Without diagnostics the meta has exactly the required keys.",
+      "retired": [{"aspect": "Omitting diagnostic keys from solver results when the solver reported none", "rationale": "Decision [49]: the C result always carries the three counts and an ESS presence word, so real solver statuses always include the diagnostics, with a masked effective_sample_size as null and a present one as its number. Optional diagnostics are omitted only for the ready/finished placeholders. The baseline needed a fake solver that dropped keys, which the binary result cannot express."}],
+      "destinations": [
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/abi.test.mjs::solver results always carry the diagnostics; ESS is null unless C marks it present", "tests/js/abi.test.mjs::placeholders carry the former server wording and only the required meta keys", "tests/js/engine-client.test.mjs::ready and finished games answer with placeholders, without a worker", "tests/js/abi.test.mjs::probabilityMessage omits a missing ESS instead of inventing one"], "validation": "executed", "run": "gate-js", "decision": "[49]", "note": "The planned destination omitted keys whenever the C mask said absent; decision [49] keeps omission only for the ready/finished placeholders.", "asserts": "Ready/finished placeholders (not-started, finished) carry exactly the required meta keys; real solver statuses carry effective_sample_size as null when C masks it and as the measured number when present (a present zero stays 0); messages omit a missing ESS; nothing is invented."}
+      ]
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_invalid_optional_diagnostics_are_rejected",
+      "disposition": "split",
+      "baseline": "ESS -1/-0.5/NaN/inf/'12'/True/[3] and counts -1/1.5/2.0/True/None/'3' are rejected.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::engine_results/diagnostic_ess_minus_one", "tests/c/test_api.c::engine_results/diagnostic_ess_minus_half", "tests/c/test_api.c::engine_results/diagnostic_ess_nan", "tests/c/test_api.c::engine_results/diagnostic_ess_inf", "tests/c/test_api.c::engine_results/diagnostic_exact_components_negative", "tests/c/test_api.c::engine_results/diagnostic_sampled_components_negative", "tests/c/test_api.c::engine_results/diagnostic_sample_attempts_negative"], "validation": "executed", "run": "gate-c-1", "note": "String, boolean, null and fractional values have no binary encoding; their JS equivalents are in the js-abi destination.", "fixtures": ["engine_cases.h:ENGINE_RESULT_CASES/diagnostic_ess_minus_one", "engine_cases.h:ENGINE_RESULT_CASES/diagnostic_ess_minus_half", "engine_cases.h:ENGINE_RESULT_CASES/diagnostic_ess_nan", "engine_cases.h:ENGINE_RESULT_CASES/diagnostic_ess_inf", "engine_cases.h:ENGINE_RESULT_CASES/diagnostic_exact_components_negative", "engine_cases.h:ENGINE_RESULT_CASES/diagnostic_sampled_components_negative", "engine_cases.h:ENGINE_RESULT_CASES/diagnostic_sample_attempts_negative"], "asserts": "Rejected."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/abi.test.mjs::malformed results are refused", "tests/js/engine-client.test.mjs::worker results are checked before C accepts them; rejected ones never touch the game"], "validation": "executed", "run": "gate-js", "note": "Binary equivalents: counts are uint32 fields and ESS a float64 with a presence word, so the typed-JSON cases become 'ESS flag 2', 'ESS without flag', 'NaN ESS', a forged NaN effective sample size and a negative count; non-integer and non-number values cannot be encoded.", "asserts": "String/boolean/array/null/fractional diagnostics are rejected."}
+      ],
+      "retired": [{"aspect": "2.0 rejected as a non-integer count", "rationale": "JSON float vs int distinction; 2.0 is the integer 2 in JavaScript."}, {"aspect": "Non-numeric diagnostics ('12', True, [3] for the ESS; True, None, '3' for counts) and the fractional count 1.5", "rationale": "Unrepresentable in the binary result: counts are uint32 fields and the ESS a float64 with a 0/1 presence word. Their analogues are tested instead: a presence word of 2, an ESS without its flag, NaN/negative/infinite ESS and negative counts."}, {"aspect": "HTTP 500 probability_failed and the server ERROR log", "rationale": "No server or log; refused results are invalid_result worker errors."}]
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_duplicate_requests_share_one_solver_run",
+      "disposition": "split",
+      "baseline": "Four concurrent requests for one revision share a single solver call and identical bodies.",
+      "destinations": [
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::current-revision odds are reused unless unavailable; concurrent requests share a solve"], "validation": "executed", "run": "gate-js", "asserts": "Requests for the same generation/revision coalesce onto one in-flight solve."}
+      ],
+      "retired": [{"aspect": "Per-game solver lock and global semaphore", "rationale": "Single worker per tab; no server threads."}]
+    },
+    {
+      "id": "tests.test_server.ProbabilityTests.test_game_stays_playable_while_solving",
+      "disposition": "port",
+      "baseline": "While a solve blocks, a move completes in < 2 s; the late result keeps its old revision, is stale afterwards, and a new solve runs for the new revision.",
+      "transport": "The 409 for a later old-revision request disappears (stale_revision in C/JS). The in-flight request no longer returns the old revision's odds: as planned, the move aborts it by terminating the worker, and the engine rejects any late result for the old revision.",
+      "destinations": [
+        {"layer": "browser", "status": "mapped", "tests": ["tests/js/browser/odds.spec.mjs::a move completes while a slow solve runs; the obsolete solve is abandoned", "tests/js/browser/odds.spec.mjs::turning odds off or starting a new game drops a slow solve for good"], "validation": "executed", "run": "gate-browser", "asserts": "Forced slow worker: a normal action completes first (not just an animation); the late result is discarded; the new revision is solved."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::a move cancels the solve in flight by terminating its worker", "tests/js/engine-client.test.mjs::a new game or an explicit cancel also abandons the old request", "tests/js/solver-host.test.mjs::cancel terminates a busy worker; its late answer is ignored", "tests/js/solver-host.test.mjs::answers for other requests or positions are protocol violations"], "validation": "executed", "run": "gate-js", "asserts": "Generation/revision/request guards plus worker termination for obsolete work."},
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_api.c::late_result_for_old_revision_rejected"], "validation": "executed", "run": "gate-c-1", "asserts": "The engine rejects a result for an old revision before caching or applying proofs."}
+      ]
+    },
+    {
+      "id": "tests.test_server.ErrorHandlingTests.test_unknown_paths",
+      "disposition": "retire",
+      "baseline": "Unknown paths are JSON 404 not_found.",
+      "retired": [{"aspect": "Routing", "rationale": "HTTP-only."}]
+    },
+    {
+      "id": "tests.test_server.ErrorHandlingTests.test_protocol_errors_use_json",
+      "disposition": "retire",
+      "baseline": "Malformed HTTP (bad method, long URI, too many headers) gets JSON 501/414/431 bodies.",
+      "retired": [{"aspect": "HTTP protocol errors", "rationale": "HTTP-only."}]
+    },
+    {
+      "id": "tests.test_server.ErrorHandlingTests.test_unexpected_errors_are_logged_and_hidden",
+      "disposition": "split",
+      "baseline": "An unexpected exception is logged and returned as a generic 500 internal_error without internal details.",
+      "destinations": [
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::a trap poisons the game instance; restart starts a fresh one", "tests/js/browser/app.spec.mjs::a trap in the game engine stops the game visibly; a new game restarts it"], "validation": "executed", "run": ["gate-browser", "gate-js"], "deviation": "The notice has a generic title ('The game engine stopped'), but its message includes the trap text (e.g. 'injected clock fault') and the error keeps a log. Withholding details protected a server from remote clients; that boundary is gone (see retired). Accepted by the parent on 2026-10-01T06:42Z (see reconciliation.deviations).", "asserts": "An unexpected engine/WASM failure is reported as an explicit error state (never success-shaped) with a generic user message."}
+      ],
+      "retired": [{"aspect": "Server log and 500 JSON body without internal details", "rationale": "No server and no remote client: a failure stays inside the user's own tab, so there is nobody to withhold details from. The engine client keeps the trap text and log, and the UI shows it under a generic title (see the deviation)."}]
+    },
+    {
+      "id": "tests.test_server.ErrorHandlingTests.test_server_header_hides_versions",
+      "disposition": "retire",
+      "baseline": "Server header is 'Minesweeper' without versions.",
+      "retired": [{"aspect": "Server header", "rationale": "HTTP-only; the static host owns headers."}]
+    },
+    {
+      "id": "tests.test_server.RealSolverIntegrationTests.test_odds_for_a_forced_position",
+      "disposition": "port",
+      "baseline": "Real solver on TWO_MINES opened: exact, hidden odds sum to 2, mines {16,18} and safe {15,17,19} proven, nothing revealed proven; meta has required + optional keys only.",
+      "destinations": [
+        {"layer": "c-api", "status": "mapped", "tests": ["tests/c/test_autosolve.c::real_solver_two_mines_opened"], "validation": "executed", "run": "gate-c-final", "note": "The engine-plus-real-solver test lives in test_autosolve.c, not test_api.c.", "fixtures": ["probability_cases.h:PROB_CASE_TWO_MINES_OPENED"], "asserts": "End-to-end engine solve equals the fixture: every hidden cell proven (safe 15,17,19..24; mines 16,18)."},
+        {"layer": "js-abi", "status": "mapped", "tests": ["tests/js/engine-client.test.mjs::a playing position is solved by the worker and accepted by C", "tests/js/abi.test.mjs::an exact result rebuilds the former odds payload"], "validation": "executed", "run": "gate-js", "asserts": "Probability object keys {status, probabilities, proven_safe, proven_mines, message, meta} plus generation/revision; meta keys required + optional diagnostics."}
+      ]
+    }
+  ]
+}

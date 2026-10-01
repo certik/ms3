@@ -25,3 +25,16 @@ env/
 # Logs and scratch space
 *.log
 .scratch/
+
+# pixi environments and generated build output (reproduced from the sources,
+# the pinned third_party/corec submodule and pixi.lock)
+.pixi/
+/build/
+/dist/
+node_modules/
+
+# Browser test output
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

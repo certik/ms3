@@ -1,19 +1,20 @@
 /*
  * Minesweeper front end.
  *
- * Vanilla JavaScript with no build step and no dependencies. Everything shown
- * comes from the same-origin JSON API served by server.py:
- *
- *   POST /api/games                               create a game
- *   GET  /api/games/{id}                          current game state
- *   POST /api/games/{id}/actions                  reveal / flag / chord
- *   GET  /api/games/{id}/probabilities?revision=N mine odds for one revision
+ * Vanilla JavaScript modules with no build step and no dependencies. The game
+ * runs locally: engine-client.js drives the C engine compiled to WebAssembly,
+ * with the authoritative game in this page's main thread and the mine-odds
+ * solver in a separate worker. Each tab plays its own game; reloading starts
+ * a new one. Only the difficulty, zoom, mine-odds and autosolve preferences
+ * are stored.
  *
  * Moves and odds are independent: a move never waits for the solver. Odds are
- * only drawn when they belong to the game id AND revision on screen, and every
+ * only drawn when they belong to the game AND revision on screen, and every
  * odds request carries a generation number so late answers are ignored even
- * if aborting the fetch came too late.
+ * if cancelling the solver came too late.
  */
+import { EngineClient, EngineError } from './engine-client.js';
+
 (function () {
   'use strict';
 
@@ -34,14 +35,14 @@
   const PAGE_ROWS = 5;
   const LONG_PRESS_MS = 450;
   const TOUCH_SLOP_PX = 10;
-  const BUSY_DELAY_MS = 300;
   const HINT_MS = 4000;
-  const TIMEOUTS = { load: 15000, create: 20000, action: 20000, probe: 6000, odds: 90000 };
   const STORAGE_KEYS = {
-    game: 'minesweeper.gameId',
     settings: 'minesweeper.settings',
     prefs: 'minesweeper.prefs'
   };
+  // The former server version remembered its game here; games are no longer
+  // saved, so the stale id is removed.
+  const LEGACY_GAME_KEY = 'minesweeper.gameId';
   const GAME_STATUSES = ['ready', 'playing', 'won', 'lost'];
   const ODDS_STATUSES = ['exact', 'approximate', 'unavailable', 'not-started', 'finished'];
   const READY_TEXT = 'Odds are not defined yet: the mines are placed when you make your first reveal. ' +
@@ -68,44 +69,35 @@
     focusIndex: 0, // roving tabindex position
     hoverIndex: -1,
     pressing: false,
-    connection: 'connecting',
-    loading: false, // restoring a saved game
-    loadSeq: 0,
+    // Local engine: loading -> ready, or error. `fatal` marks a game engine
+    // that stopped while a game was on screen (the board stays visible but
+    // frozen until a new game starts a fresh engine instance).
+    engine: { state: 'loading', error: null, fatal: false },
+    pendingStart: null, // { config, opts } requested while the engine loads
     loadError: null, // shown when there is no game at all
-    pendingCreate: null,
-    pendingAction: null,
-    busyTimer: 0,
-    busyVisible: false,
-    gameGone: false,
-    syncing: false,
-    needsResync: false, // a move's outcome is unknown; reload before the next move
-    uncertainSeq: 0, // bumped whenever a move's outcome becomes unknown
     notice: null,
     hintTimer: 0,
     hintActive: false,
     timerHandle: 0,
     timerText: '',
-    reconnectTimer: 0,
-    reconnectDelay: 2000,
     fitFrame: 0,
     autosolve: { enabled: false, timer: 0, attemptedKey: null },
     odds: {
       enabled: false,
       gen: 0, // bumped whenever an in-flight request becomes obsolete
-      controller: null,
       requestKey: null,
       startedAt: 0,
       ticker: 0,
       data: null, // parsed odds valid for dataKey only
       dataKey: null,
-      cache: null, // last good answer, reused after a failed or rejected move
+      cache: null, // last good answer, reused while the position is unchanged
       error: null,
       discardedKey: null,
-      retryTimer: 0,
       announceNext: false
     }
   };
 
+  const engine = new EngineClient();
   const boardView = { width: 0, height: 0, cells: [], sigs: [] };
   const touch = { timer: 0, index: -1, x: 0, y: 0, pointerId: null, fired: false };
   let lastPointerType = 'mouse';
@@ -184,10 +176,6 @@
 
   function maxMines(width, height) {
     return width * height - SAFE_AREA;
-  }
-
-  function gameUrl(id) {
-    return '/api/games/' + encodeURIComponent(id);
   }
 
   function oddsKey(game) {
@@ -298,104 +286,34 @@
     });
   }
 
-  // ------------------------------------------------------------------- network
+  // -------------------------------------------------------------------- engine
 
-  class ApiError extends Error {
-    constructor(message, info) {
-      super(message);
-      this.name = 'ApiError';
-      this.kind = (info && info.kind) || 'http'; // http | network | timeout | aborted | parse
-      this.status = (info && info.status) || 0;
-      this.code = (info && info.code) || '';
-      this.state = (info && info.state) || null;
-    }
-  }
-
-  async function api(method, path, options) {
-    const opts = options || {};
-    const controller = new AbortController();
-    const outer = opts.signal || null;
-    let timedOut = false;
-    const relayAbort = function () { controller.abort(); };
-    if (outer) {
-      if (outer.aborted) controller.abort();
-      else outer.addEventListener('abort', relayAbort);
-    }
-    const timer = setTimeout(function () {
-      timedOut = true;
-      controller.abort();
-    }, opts.timeout || 15000);
-    const headers = { Accept: 'application/json' };
-    const init = {
-      method: method,
-      headers: headers,
-      signal: controller.signal,
-      cache: 'no-store',
-      credentials: 'same-origin'
-    };
-    if (opts.body !== undefined) {
-      headers['Content-Type'] = 'application/json';
-      init.body = JSON.stringify(opts.body);
-    }
-    let response;
-    let text;
-    try {
-      response = await fetch(path, init);
-      text = await response.text();
-    } catch (err) {
-      if (outer && outer.aborted) throw new ApiError('Request cancelled.', { kind: 'aborted' });
-      if (timedOut) throw new ApiError('The server did not answer in time.', { kind: 'timeout' });
-      if (err && err.name === 'AbortError') throw new ApiError('Request cancelled.', { kind: 'aborted' });
-      throw new ApiError('Could not reach the game server.', { kind: 'network' });
-    } finally {
-      clearTimeout(timer);
-      if (outer) outer.removeEventListener('abort', relayAbort);
-    }
-    setConnection('online');
-    let data = null;
-    let parsed = false;
-    if (text) {
-      try {
-        data = JSON.parse(text);
-        parsed = true;
-      } catch (e) {
-        parsed = false;
-      }
-    }
-    if (!response.ok) {
-      const body = parsed && data && typeof data === 'object' ? data : null;
-      const info = body && body.error && typeof body.error === 'object' ? body.error : null;
-      const message = info && typeof info.message === 'string' && info.message.trim()
-        ? info.message.trim()
-        : 'The server answered with an error (HTTP ' + response.status + ').';
-      throw new ApiError(message, {
-        kind: 'http',
-        status: response.status,
-        code: info && typeof info.code === 'string' ? info.code : '',
-        state: body ? body.state : null
-      });
-    }
-    if (!parsed) {
-      throw new ApiError('The server sent a reply that is not JSON (HTTP ' + response.status + ').', {
-        kind: 'parse',
-        status: response.status
-      });
-    }
-    return data;
+  // Engine failures are EngineError objects (wasm-host.js) with a stable
+  // `code`, a player-facing message and a `kind`: input | conflict |
+  // inconsistent | resource | internal | trap | load | worker | protocol |
+  // timeout | aborted.
+  function isEngineError(err) {
+    return !!err && err.name === 'EngineError' && typeof err.code === 'string';
   }
 
   function describeError(err) {
-    if (err.kind === 'network') return 'Could not reach the game server.';
-    if (err.kind === 'timeout') return 'The server did not answer in time.';
-    return err.message;
+    if (err && typeof err.message === 'string' && err.message.trim()) return err.message.trim();
+    return 'The game engine reported an unexpected error.';
+  }
+
+  // The game instance itself stopped (a trap) or broke its contract: the game
+  // on screen cannot continue in it.
+  function isFatal(err) {
+    return !isEngineError(err) || err.kind === 'trap' || engine.status === 'failed';
   }
 
   // ------------------------------------------------------------------- parsing
 
   // Strict validation against the documented contract: anything malformed is
-  // rejected (null) so the caller reports a parse error. Nothing is patched
-  // with plausible defaults. Only the public fields are read; hidden cells keep
-  // mine and adjacent as null until the server discloses the layout at the end.
+  // rejected (null) so the caller reports an error. Nothing is patched with
+  // plausible defaults. The engine adapter rebuilds the former server's
+  // GameState from the C engine's public view; hidden cells keep mine and
+  // adjacent as null until the engine discloses the layout at the end.
   function isBool(value) {
     return value === true || value === false;
   }
@@ -409,6 +327,7 @@
     const width = raw.width;
     const height = raw.height;
     if (typeof raw.id !== 'string' || !raw.id) return null;
+    if (!isInt(raw.generation) || raw.generation < 1) return null;
     if (!isInt(width) || width < MIN_SIDE || width > MAX_SIDE) return null;
     if (!isInt(height) || height < MIN_SIDE || height > MAX_SIDE) return null;
     const total = width * height;
@@ -435,6 +354,7 @@
     if (flagged !== raw.flags) return null;
     return {
       id: raw.id,
+      generation: raw.generation,
       width: width,
       height: height,
       mines: raw.mines,
@@ -517,7 +437,7 @@
     };
   }
 
-  // Mirrors the server's own validation: exact and approximate answers are
+  // Mirrors the engine's own validation: exact and approximate answers are
   // complete (a number for every hidden cell), revealed cells are always null,
   // and proven cells carry exactly 0 or 1. Unavailable answers may leave
   // hidden cells null.
@@ -538,70 +458,94 @@
     return true;
   }
 
-  // ---------------------------------------------------------------- connection
+  // -------------------------------------------------------------- engine state
 
-  function setConnection(state) {
-    if (app.connection === state) return;
-    const previous = app.connection;
-    app.connection = state;
-    renderConnection();
-    if (state === 'offline') {
-      scheduleReconnect(true);
-      return;
-    }
-    stopReconnect();
-    if (state === 'online' && previous === 'offline') {
-      clearNotice('offline');
-      announce('Connected to the game server again.');
-      if (app.odds.error && app.odds.error.kind === 'network') {
-        app.odds.error = null;
-        syncOdds();
-        renderOddsPanel();
-      }
-    }
-    // Being reachable again never settles an uncertain move by itself; only an
-    // authoritative reload of the game does.
-    if (state === 'online' && app.needsResync) resync({ quiet: true });
+  function setEngineState(state, error) {
+    app.engine.state = state;
+    app.engine.error = error || null;
+    renderEngineStatus();
   }
 
-  function scheduleReconnect(reset) {
-    if (reset) app.reconnectDelay = 2000;
-    if (app.reconnectTimer) return;
-    app.reconnectTimer = setTimeout(reconnectTick, app.reconnectDelay);
-  }
-
-  function stopReconnect() {
-    if (app.reconnectTimer) {
-      clearTimeout(app.reconnectTimer);
-      app.reconnectTimer = 0;
+  // The game instance stopped while a game was on screen. The board stays
+  // visible but frozen; a new game starts a fresh engine instance.
+  function engineFailed(err) {
+    const game = app.game;
+    if (game && timerRunning()) {
+      game.elapsed = currentElapsed();
+      game.receivedAt = performance.now();
     }
-  }
-
-  async function reconnectTick() {
-    app.reconnectTimer = 0;
-    if (app.connection !== 'offline') return;
-    if (!document.hidden) await resync({ quiet: true });
-    if (app.connection === 'offline') {
-      app.reconnectDelay = Math.min(app.reconnectDelay * 2, 30000);
-      scheduleReconnect(false);
-    }
-  }
-
-  function showOfflineNotice(prefix) {
-    if (app.notice && app.notice.id === 'uncertain') {
-      // Keep the more important "move outcome unknown" notice on screen.
-      hint('Still cannot reach the game server. This page keeps retrying.');
+    app.engine.fatal = true;
+    setEngineState('error', err);
+    cancelOddsRequest();
+    updateTimer();
+    if (!game) {
+      app.loadError = {
+        offline: true,
+        title: 'The game engine stopped',
+        text: describeError(err) + ' Try again to restart it.'
+      };
+      render();
       return;
     }
     showNotice({
-      id: 'offline',
+      id: 'engine',
       tone: 'error',
       icon: 'i-offline',
-      title: 'Cannot reach the game server',
-      message: (prefix ? prefix + ' ' : '') +
-        'Check that python3 server.py is still running. This page keeps retrying on its own.',
-      actions: [{ label: 'Retry now', primary: true, run: function () { resync(); } }]
+      title: 'The game engine stopped',
+      message: describeError(err) + ' This game cannot continue. Start a new game to keep playing.',
+      actions: [{
+        label: 'Start new game',
+        primary: true,
+        run: function () { startNewGame(app.settings, { focusBoard: true }); }
+      }]
     });
+    render();
+  }
+
+  // Loads the engine (once, or again after a failure) and then starts the
+  // game requested meanwhile, or one with the saved settings.
+  async function loadEngine() {
+    if (app.engine.state === 'loading' && engine.status === 'loading') return;
+    setEngineState('loading');
+    app.loadError = null;
+    render();
+    try {
+      if (app.engine.fatal) await engine.restart();
+      else await engine.load();
+    } catch (err) {
+      setEngineState('error', err);
+      app.loadError = {
+        offline: true,
+        title: 'Could not load the game engine',
+        text: describeError(err) + (isEngineError(err) && err.code === 'abi_mismatch'
+          ? ' Reload the page; if this persists, the site files are out of date.'
+          : ' Check your connection and try again.')
+      };
+      const pending = app.pendingStart;
+      app.pendingStart = null;
+      if (app.game) {
+        showNotice({
+          id: 'engine',
+          tone: 'error',
+          icon: 'i-offline',
+          title: 'Could not restart the game engine',
+          message: describeError(err),
+          actions: [{
+            label: 'Try again',
+            primary: true,
+            run: function () { startNewGame(pending ? pending.config : app.settings, pending ? pending.opts : {}); }
+          }]
+        });
+      }
+      render();
+      if (!isEngineError(err)) throw err;
+      return;
+    }
+    app.engine.fatal = false;
+    setEngineState('ready');
+    const pending = app.pendingStart || { config: app.settings, opts: {} };
+    app.pendingStart = null;
+    startNewGame(pending.config, pending.opts);
   }
 
   // ----------------------------------------------------- notices and messages
@@ -708,40 +652,10 @@
     renderInspector();
   }
 
-  // --------------------------------------------------------- busy and timer
-
-  function isBusy() {
-    return !!(app.pendingAction || app.pendingCreate);
-  }
-
-  function refreshBusy() {
-    const busy = isBusy();
-    if (busy && !app.busyVisible && !app.busyTimer) {
-      app.busyTimer = setTimeout(function () {
-        app.busyTimer = 0;
-        if (isBusy()) {
-          app.busyVisible = true;
-          renderBusy();
-        }
-      }, BUSY_DELAY_MS);
-    }
-    if (!busy) {
-      clearTimeout(app.busyTimer);
-      app.busyTimer = 0;
-      app.busyVisible = false;
-    }
-    renderBusy();
-  }
-
-  function renderBusy() {
-    const busy = isBusy();
-    el.boardFrame.classList.toggle('is-busy', busy);
-    el.busyPill.hidden = !(busy && app.busyVisible && app.game);
-    el.board.setAttribute('aria-busy', busy ? 'true' : 'false');
-  }
+  // --------------------------------------------------------------------- timer
 
   function timerRunning() {
-    return !!app.game && app.game.status === 'playing' && !app.gameGone;
+    return !!app.game && app.game.status === 'playing' && !app.engine.fatal;
   }
 
   function currentElapsed() {
@@ -772,64 +686,13 @@
 
   // ----------------------------------------------------------------- game flow
 
-  const OFFLINE_EMPTY = {
-    offline: true,
-    title: 'Cannot reach the game server',
-    text: 'Make sure python3 server.py is running, then try again. This page also keeps retrying on its own.'
-  };
-
-  async function initialLoad() {
-    if (app.loading || app.pendingCreate) return;
-    const savedId = store.get(STORAGE_KEYS.game);
-    if (!savedId) {
-      await startNewGame(app.settings);
-      return;
-    }
-    const seq = ++app.loadSeq;
-    app.loading = true;
-    app.loadError = null;
-    render();
-    let data = null;
-    let error = null;
-    try {
-      data = await api('GET', gameUrl(savedId), { timeout: TIMEOUTS.load });
-    } catch (err) {
-      error = err;
-    }
-    if (seq !== app.loadSeq) return; // a new game was requested meanwhile
-    app.loading = false;
-    const restored = error ? null : parseGame(data);
-    if (restored) {
-      adoptGame(restored);
-      if (restored.status === 'playing') announce('Restored your game in progress.');
-      return;
-    }
-    if (error && (error.kind === 'network' || error.kind === 'timeout')) {
-      if (error.kind === 'network') setConnection('offline');
-      app.loadError = error.kind === 'network' ? OFFLINE_EMPTY : {
-        title: 'The server is not responding',
-        text: 'It did not answer in time. Try again in a moment.'
-      };
-      render();
-      return;
-    }
-    const missing = !!error && error.kind === 'http' && error.status === 404;
-    const reason = error ? describeError(error) : 'The saved game could not be read.';
-    store.remove(STORAGE_KEYS.game);
-    await startNewGame(app.settings);
-    if (app.game && !app.notice) {
-      showNotice({
-        id: 'restore',
-        tone: 'info',
-        title: 'Started a new game',
-        message: missing
-          ? 'Your previous game was not found. The server keeps games in memory only, so they are lost when it restarts.'
-          : 'Your previous game could not be restored (' + reason + ').'
-      });
-    }
+  function malformedState() {
+    return new EngineError('malformed_state', 'The game engine sent game data this page cannot read.', {
+      kind: 'internal'
+    });
   }
 
-  async function startNewGame(config, options) {
+  function startNewGame(config, options) {
     const opts = options || {};
     const request = { width: config.width, height: config.height, mines: config.mines };
     app.settings = {
@@ -839,43 +702,31 @@
       mines: request.mines
     };
     saveSettings();
-    if (app.pendingCreate) app.pendingCreate.controller.abort();
-    const pending = { controller: new AbortController() };
-    app.pendingCreate = pending;
-    app.loadSeq++; // a restore still in flight is now obsolete
-    app.loading = false;
     clearHint();
-    clearOddsView();
-    refreshBusy();
-    render();
-    let data = null;
+    if (engine.status !== 'ready' || app.engine.fatal) {
+      // The engine starts (or restarts after a failure) first; this game
+      // follows as soon as it runs.
+      app.pendingStart = { config: request, opts: opts };
+      clearOddsView();
+      if (engine.status !== 'loading') loadEngine();
+      else render();
+      return;
+    }
+    let next = null;
     let error = null;
     try {
-      data = await api('POST', '/api/games', {
-        body: request,
-        signal: pending.controller.signal,
-        timeout: TIMEOUTS.create
-      });
+      next = parseGame(engine.newGame(request));
+      if (!next) error = malformedState();
     } catch (err) {
       error = err;
     }
-    if (app.pendingCreate !== pending) return; // superseded by a newer request
-    app.pendingCreate = null;
-    const next = error ? null : parseGame(data);
-    if (!error && !next) error = new ApiError('The server sent game data this page cannot read.', { kind: 'parse' });
     if (error) {
-      refreshBusy();
-      if (error.kind !== 'aborted') handleCreateError(error, request, opts);
+      handleCreateError(error, request, opts);
       render();
       syncOdds();
+      if (!isEngineError(error)) throw error;
       return;
     }
-    // A move still in flight belongs to the previous game; drop it.
-    if (app.pendingAction) {
-      app.pendingAction.controller.abort();
-      app.pendingAction = null;
-    }
-    refreshBusy();
     clearNotice();
     if (opts.fromCustom) closeCustom(false);
     adoptGame(next);
@@ -885,20 +736,16 @@
   }
 
   function handleCreateError(err, request, opts) {
-    if (err.kind === 'network') setConnection('offline');
+    if (isFatal(err) || err.code === 'malformed_state') {
+      engineFailed(err);
+      return;
+    }
     if (!app.game) {
-      app.loadError = err.kind === 'network' ? OFFLINE_EMPTY : {
-        title: 'Could not start a game',
-        text: describeError(err)
-      };
+      app.loadError = { title: 'Could not start a game', text: describeError(err) };
       return;
     }
-    if (opts.fromCustom && err.kind === 'http' && err.status >= 400 && err.status < 500) {
-      el.customFormError.textContent = 'The server rejected these settings: ' + err.message;
-      return;
-    }
-    if (err.kind === 'network') {
-      showOfflineNotice('No new game was started; your current game is unchanged.');
+    if (opts.fromCustom && err.kind === 'input') {
+      el.customFormError.textContent = 'The engine rejected these settings: ' + describeError(err);
       return;
     }
     showNotice({
@@ -916,12 +763,9 @@
     if (sameGame && next.revision < prev.revision) return false;
     const moved = !sameGame || next.revision !== prev.revision || next.status !== prev.status;
     app.game = next;
-    app.gameGone = false;
     app.loadError = null;
-    store.set(STORAGE_KEYS.game, next.id);
     if (!sameGame) {
       resetOdds();
-      app.needsResync = false; // uncertainty about the previous game no longer matters
       app.hoverIndex = -1;
       app.settings = {
         preset: presetKeyFor(next.width, next.height, next.mines),
@@ -939,56 +783,45 @@
     return true;
   }
 
-  async function sendAction(action, index) {
+  // Moves run synchronously in the local engine: a move is either applied
+  // (one new revision) or rejected without any change, so there is never an
+  // outcome to guess or a move to retry.
+  function sendAction(action, index) {
     const game = app.game;
     const automatic = action === 'autosolve';
-    const pending = { controller: new AbortController(), gameId: game.id, action: action };
-    const body = automatic ? { revision: game.revision } : {
-      action: action,
-      row: Math.floor(index / game.width),
-      col: index % game.width,
-      revision: game.revision
-    };
-    app.pendingAction = pending;
     clearHint();
-    clearOddsView(); // stale odds disappear the moment a move starts
-    refreshBusy();
-    render();
-    let data = null;
+    let result = null;
     let error = null;
     try {
-      data = await api('POST', gameUrl(game.id) + (automatic ? '/autosolve' : '/actions'), {
-        body: body,
-        signal: pending.controller.signal,
-        timeout: TIMEOUTS.action
-      });
+      result = automatic
+        ? engine.autosolve({ generation: game.generation, revision: game.revision })
+        : engine.act({
+          action: action,
+          row: Math.floor(index / game.width),
+          col: index % game.width,
+          generation: game.generation,
+          revision: game.revision
+        });
     } catch (err) {
       error = err;
     }
-    if (app.pendingAction !== pending) return; // dropped because a new game started
-    app.pendingAction = null;
-    refreshBusy();
-    const current = app.game;
-    if (!current || current.id !== pending.gameId) {
-      render();
-      syncOdds();
-      return;
-    }
-    const next = error ? null : parseGame(data);
-    if (!error && !next) error = new ApiError('The server sent game data this page cannot read.', { kind: 'parse' });
-    if (!error && next.id !== current.id) {
-      error = new ApiError('The server answered for a different game.', { kind: 'parse' });
+    const next = error ? null : parseGame(result.state);
+    if (!error && (!next || next.id !== game.id)) error = malformedState();
+    if (!error && automatic && !result.available) {
+      error = new EngineError('odds_not_accepted', 'The engine holds no accepted odds for this position, so no ' +
+        'moves were played. Retry odds to continue.', { kind: 'conflict' });
     }
     if (error) {
       handleActionError(error, action);
       if (automatic) setAutosolveEnabled(false);
       render();
       syncOdds();
+      if (!isEngineError(error)) throw error;
       return;
     }
-    if (app.notice && app.notice.id !== 'gone') clearNotice();
+    if (app.notice && app.notice.id !== 'engine') clearNotice();
     adoptGame(next);
-    announceMove(action, index, current, next);
+    announceMove(action, index, game, next);
   }
 
   function actionNoun(action) {
@@ -998,66 +831,35 @@
     return 'reveal';
   }
 
-  // A failed POST does not prove the move was not applied: the server may have
-  // applied it and the answer been lost. Moves and odds pause until a reload of
-  // the game that started after this point succeeds (see resync).
-  function markMoveUncertain(action, err) {
-    app.needsResync = true;
-    app.uncertainSeq++;
-    cancelOddsRequest();
-    let cause = 'The server reported an error';
-    if (err.kind === 'network') cause = 'The connection to the game server failed before its answer arrived';
-    else if (err.kind === 'timeout') cause = 'The server did not answer in time';
-    else if (err.kind === 'parse') cause = 'The server sent an answer this page cannot read';
-    showNotice({
-      id: 'uncertain',
-      tone: err.kind === 'network' ? 'error' : 'warning',
-      icon: err.kind === 'network' ? 'i-offline' : 'i-alert',
-      title: 'Your ' + actionNoun(action) + ' may or may not have been applied',
-      message: cause + ', so it is not known whether the server applied it. The board will be reloaded ' +
-        'from the server before your next move.' +
-        (err.kind === 'network' ? ' Check that python3 server.py is still running; this page keeps retrying.' : ''),
-      actions: [{ label: 'Reload board', primary: true, run: function () { resync(); } }]
-    });
-    render();
-    if (err.kind !== 'network') resync({ quiet: true }); // offline: the reconnect loop reloads
-  }
-
   function handleActionError(err, action) {
-    if (err.kind === 'aborted') return;
-    if (err.kind === 'network' || err.kind === 'timeout' || err.kind === 'parse' ||
-        (err.kind === 'http' && err.status >= 500)) {
-      if (err.kind === 'network') setConnection('offline');
-      markMoveUncertain(action, err);
-      return;
-    }
-    if (err.status === 404) {
-      markGameGone();
+    if (isFatal(err) || err.code === 'malformed_state') {
+      engineFailed(err);
       return;
     }
     const current = app.game;
-    const latest = parseGame(err.state);
+    const latest = err.state ? parseGame(err.state) : null;
     const sameGame = !!latest && !!current && latest.id === current.id;
-    if (err.status === 409 && err.code === 'game_over') {
-      if (sameGame) adoptGame(latest);
-      showNotice({ id: 'action', tone: 'warning', title: 'This game is already over', message: err.message });
+    if (sameGame) adoptGame(latest);
+    if (err.code === 'game_over') {
+      showNotice({ id: 'action', tone: 'warning', title: 'This game is already over', message: describeError(err) });
       return;
     }
-    if (err.status === 409) {
-      if (sameGame) adoptGame(latest);
+    if (err.code === 'stale_revision') {
       showNotice({
         id: 'stale',
         tone: 'warning',
         title: 'Your move was not applied',
-        message: 'The game changed before your ' + actionNoun(action) + ' arrived (for example in another tab), ' +
-          'so it was not applied to a position you had not seen. ' +
-          (sameGame ? 'The latest board is shown now; check it and try again.' : err.message),
-        actions: sameGame ? [] : [{ label: 'Reload game', run: function () { resync(); } }]
+        message: 'The game changed before your ' + actionNoun(action) + ' was applied, so it was not applied ' +
+          'to a position you had not seen. The latest board is shown now; check it and try again.'
       });
       return;
     }
-    if (sameGame) adoptGame(latest);
-    showNotice({ id: 'action', tone: 'error', title: 'Move rejected', message: err.message });
+    showNotice({
+      id: 'action',
+      tone: err.kind === 'conflict' ? 'warning' : 'error',
+      title: action === 'autosolve' ? 'Autosolve paused' : 'Move rejected',
+      message: describeError(err)
+    });
   }
 
   function announceMove(action, index, before, after) {
@@ -1090,103 +892,17 @@
     }
   }
 
-  function markGameGone() {
-    const game = app.game;
-    if (game && timerRunning()) {
-      game.elapsed = currentElapsed();
-      game.receivedAt = performance.now();
-    }
-    app.gameGone = true;
-    app.needsResync = false;
-    cancelOddsRequest();
-    store.remove(STORAGE_KEYS.game);
-    updateTimer();
-    showNotice({
-      id: 'gone',
-      tone: 'warning',
-      title: 'This game is no longer on the server',
-      message: 'The server keeps games in memory only, so they vanish when it restarts. Start a new game to keep playing.',
-      actions: [{
-        label: 'Start new game',
-        primary: true,
-        run: function () { startNewGame(app.settings, { focusBoard: true }); }
-      }]
-    });
-    render();
-  }
-
-  // Re-read the current game from the server (reconnects, timeouts, retries).
-  // This authoritative reload is the only thing that settles an uncertain move,
-  // and only if it started after the move became uncertain.
-  async function resync(options) {
-    const opts = options || {};
-    if (!app.game) {
-      if (!app.loading && !app.pendingCreate) await initialLoad();
-      return;
-    }
-    if (app.syncing) return;
-    app.syncing = true;
-    const id = app.game.id;
-    const seq = app.uncertainSeq;
-    try {
-      const data = await api('GET', gameUrl(id), { timeout: TIMEOUTS.probe });
-      const next = parseGame(data);
-      if (!next || next.id !== id) throw new ApiError('The server sent game data this page cannot read.', { kind: 'parse' });
-      if (app.game && app.game.id === id) {
-        const changed = next.revision !== app.game.revision;
-        const settled = app.needsResync && seq === app.uncertainSeq;
-        if (settled) app.needsResync = false;
-        adoptGame(next);
-        clearNotice('offline');
-        if (settled) {
-          showNotice({
-            id: 'resynced',
-            tone: 'info',
-            title: 'Board reloaded from the server',
-            message: changed
-              ? 'The board changed, so your last move was probably applied. Check it before your next move.'
-              : 'Nothing changed, so your last move was not applied.'
-          });
-        } else if (changed && !opts.quiet) {
-          announce('Loaded the latest board from the server.');
-        }
-      }
-    } catch (err) {
-      if (err.kind === 'http' && err.status === 404) {
-        if (app.game && app.game.id === id && !app.gameGone) markGameGone();
-      } else if (err.kind === 'network') {
-        setConnection('offline');
-        if (!opts.quiet) showOfflineNotice('');
-      } else if (!opts.quiet) {
-        showNotice({ id: 'action', tone: 'error', title: 'Could not refresh the game', message: describeError(err) });
-      }
-    } finally {
-      app.syncing = false;
-      // A move became uncertain while this reload was in flight: reload again.
-      if (app.needsResync && seq !== app.uncertainSeq && app.connection !== 'offline') resync({ quiet: true });
-      else syncAutosolve();
-    }
-  }
-
   // ------------------------------------------------------------------- moves
 
   function canAct() {
     const game = app.game;
     if (!game) return false;
-    if (app.pendingCreate) {
+    if (app.pendingStart) {
       hint('A new game is starting...');
       return false;
     }
-    if (app.pendingAction) return false; // one move at a time; the busy pill shows progress
-    if (app.gameGone) {
-      hint('This game is no longer on the server. Start a new game to keep playing.');
-      return false;
-    }
-    if (app.needsResync || app.syncing) {
-      hint(app.needsResync
-        ? 'Your last move may or may not have been applied. Reloading the board from the server first...'
-        : 'Reloading the board from the server...');
-      if (app.needsResync) resync({ quiet: true });
+    if (app.engine.fatal) {
+      hint('The game engine stopped, so this game cannot continue. Start a new game to keep playing.');
       return false;
     }
     if (isTerminal(game)) {
@@ -1288,15 +1004,14 @@
     const auto = app.autosolve;
     const game = app.game;
     const data = currentOdds();
-    if (!auto.enabled || auto.timer || !data || isBusy() || app.syncing ||
-        app.needsResync || !hasAutomaticMoves(game, data)) return;
+    if (!auto.enabled || auto.timer || !data || app.engine.fatal || !hasAutomaticMoves(game, data)) return;
     const key = oddsKey(game);
     if (auto.attemptedKey === key) return;
     auto.timer = setTimeout(function () {
       auto.timer = 0;
       const latest = currentOdds();
-      if (!auto.enabled || !latest || oddsKey(app.game) !== key || isBusy() ||
-          app.syncing || app.needsResync || !hasAutomaticMoves(app.game, latest)) return;
+      if (!auto.enabled || !latest || oddsKey(app.game) !== key || app.engine.fatal ||
+          !hasAutomaticMoves(app.game, latest)) return;
       // A no-op or failed batch must not become a same-revision request loop.
       auto.attemptedKey = key;
       sendAction('autosolve');
@@ -1317,25 +1032,21 @@
     render();
     syncOdds();
     announce(on ? 'Autosolve on. Only proven moves are played; you choose every uncertain cell.'
-      : 'Autosolve paused. Any safe-move batch already sent will finish.');
+      : 'Autosolve paused. Moves already played stay on the board.');
   }
 
   function renderAutosolve() {
     const auto = app.autosolve;
     const game = app.game;
-    const running = app.pendingAction && app.pendingAction.action === 'autosolve';
     el.autosolveToggle.setAttribute('aria-checked', auto.enabled ? 'true' : 'false');
-    el.autosolveStatus.hidden = !auto.enabled && !running;
+    el.autosolveStatus.hidden = !auto.enabled;
     let text = '';
-    if (!auto.enabled && running) {
-      text = 'Pausing autosolve; the safe-move batch already sent is finishing.';
-    } else if (auto.enabled) {
+    if (auto.enabled) {
       const data = currentOdds();
-      if (!game || app.pendingCreate) text = 'Autosolve is waiting for the board.';
+      if (!game || app.pendingStart) text = 'Autosolve is waiting for the board.';
+      else if (app.engine.fatal) text = 'Autosolve stopped with the game engine. Start a new game to continue.';
       else if (game.status === 'ready') text = 'Choose your first cell. Autosolve will then play only certain moves.';
       else if (isTerminal(game)) text = 'Game over. Autosolve never chooses uncertain cells.';
-      else if (app.gameGone || app.needsResync || app.syncing) text = 'Autosolve is waiting for the board to be reloaded.';
-      else if (isBusy()) text = 'Autosolve is opening proven-safe cells and updating flags...';
       else if (!data) {
         text = oddsPhase() === 'error' || oddsPhase() === 'discarded'
           ? 'Autosolve is waiting for valid odds. Retry odds or keep playing.'
@@ -1401,7 +1112,7 @@
   function currentOdds() {
     const o = app.odds;
     const game = app.game;
-    if (!o.enabled || !game || !o.data || app.gameGone || game.status !== 'playing') return null;
+    if (!o.enabled || !game || !o.data || app.engine.fatal || game.status !== 'playing') return null;
     if (o.dataKey !== oddsKey(game)) return null;
     if (o.data.gameId !== game.id || o.data.revision !== game.revision) return null;
     return o.data;
@@ -1411,12 +1122,11 @@
     const o = app.odds;
     const game = app.game;
     if (!o.enabled) return 'off';
-    if (app.pendingCreate) return 'waiting';
+    if (app.pendingStart) return 'waiting';
     if (!game) return 'nogame';
-    if (app.gameGone) return 'gone';
+    if (app.engine.fatal) return 'stopped';
     if (game.status === 'ready') return 'ready';
     if (isTerminal(game)) return 'ended';
-    if (app.pendingAction || app.needsResync) return 'waiting';
     const key = oddsKey(game);
     if (currentOdds()) return 'result';
     if (o.error && o.error.key === key) return 'error';
@@ -1424,18 +1134,13 @@
     return 'loading';
   }
 
+  // Obsolete inference is cancelled by terminating the solver worker; the
+  // game itself never waits for it.
   function cancelOddsRequest() {
     cancelAutosolve();
     const o = app.odds;
-    o.gen++; // late answers from the old request are ignored even if abort was too late
-    if (o.controller) {
-      o.controller.abort();
-      o.controller = null;
-    }
-    if (o.retryTimer) {
-      clearTimeout(o.retryTimer);
-      o.retryTimer = 0;
-    }
+    o.gen++; // late answers from the old request are ignored even if cancelling came too late
+    engine.cancelOdds();
     o.requestKey = null;
     stopOddsTicker();
   }
@@ -1458,8 +1163,7 @@
   function syncOdds() {
     const o = app.odds;
     const game = app.game;
-    if (!o.enabled || !game || app.gameGone || app.pendingCreate || app.pendingAction || app.needsResync ||
-        game.status !== 'playing') {
+    if (!o.enabled || !game || app.engine.fatal || app.pendingStart || game.status !== 'playing') {
       cancelOddsRequest();
       renderOddsPanel();
       return;
@@ -1487,29 +1191,22 @@
     requestOdds(game, key);
   }
 
-  async function requestOdds(game, key, attempt) {
+  async function requestOdds(game, key) {
     const o = app.odds;
-    const tries = attempt || 1;
     cancelOddsRequest();
     const gen = ++o.gen;
-    const controller = new AbortController();
-    o.controller = controller;
     o.requestKey = key;
-    if (tries === 1) o.startedAt = performance.now();
+    o.startedAt = performance.now();
     startOddsTicker();
     renderOddsPanel();
     let data = null;
     let error = null;
     try {
-      data = await api('GET', gameUrl(game.id) + '/probabilities?revision=' + encodeURIComponent(String(game.revision)), {
-        signal: controller.signal,
-        timeout: TIMEOUTS.odds
-      });
+      data = await engine.odds({ generation: game.generation, revision: game.revision });
     } catch (err) {
       error = err;
     }
     if (gen !== o.gen) return; // a move, new game or toggle made this answer obsolete
-    o.controller = null;
     o.requestKey = null;
     stopOddsTicker();
     const current = app.game;
@@ -1518,56 +1215,33 @@
       return;
     }
     if (error) {
-      if (error.kind === 'aborted') {
-        renderOddsPanel();
+      if (isFatal(error)) {
+        engineFailed(error);
+        if (!isEngineError(error)) throw error;
         return;
       }
-      if (error.kind === 'http' && error.status === 409) {
+      if (error.kind === 'conflict') {
         handleOddsConflict(error, key);
         return;
       }
-      if (error.kind === 'http' && error.status === 404) {
-        markGameGone();
-        return;
-      }
-      if (error.kind === 'http' && error.status === 503 && tries < 4) {
-        // The solver is busy with other positions: wait briefly and ask again,
-        // keeping the "calculating" state (same key, fresh generation).
-        o.requestKey = key;
-        startOddsTicker();
-        o.retryTimer = setTimeout(function () {
-          o.retryTimer = 0;
-          const now = app.game;
-          if (!o.enabled || !now || oddsKey(now) !== key || app.pendingAction || app.pendingCreate) {
-            o.requestKey = null;
-            syncOdds();
-            return;
-          }
-          requestOdds(now, key, tries + 1);
-        }, 1200 * tries);
-        renderOddsPanel();
-        return;
-      }
-      if (error.kind === 'network') setConnection('offline');
       o.error = { key: key, kind: error.kind, message: oddsErrorText(error) };
       renderOddsPanel();
       return;
     }
     const parsed = parseOdds(data);
     if (!parsed) {
-      o.error = { key: key, kind: 'parse', message: 'The server sent odds this page cannot read, so none are shown.' };
+      o.error = { key: key, kind: 'parse', message: 'The engine sent odds this page cannot read, so none are shown.' };
       renderOddsPanel();
       return;
     }
     if (parsed.gameId !== current.id || parsed.revision !== current.revision) {
-      // An answer computed for another snapshot is never drawn.
+      // An answer computed for another position is never drawn.
       o.discardedKey = key;
       renderOddsPanel();
-      if (parsed.gameId === current.id && parsed.revision > current.revision) resync({ quiet: true });
       return;
     }
     if (!oddsFitBoard(parsed, current)) {
-      o.error = { key: key, kind: 'parse', message: 'The server sent odds that do not match this board, so none are shown.' };
+      o.error = { key: key, kind: 'parse', message: 'The engine sent odds that do not match this board, so none are shown.' };
       renderOddsPanel();
       return;
     }
@@ -1581,34 +1255,22 @@
     syncAutosolve();
   }
 
+  // Solver failures never affect the game: they are shown with Retry odds.
   function oddsErrorText(err) {
-    if (err.kind === 'network') return 'Could not reach the server to calculate odds.';
-    if (err.kind === 'timeout') {
-      return 'The solver did not answer within ' + Math.round(TIMEOUTS.odds / 1000) +
-        ' seconds. Try again, or keep playing; odds are requested again after your next move.';
-    }
-    if (err.kind === 'http') return 'The server could not calculate odds: ' + err.message;
-    return err.message;
+    if (err.kind === 'aborted') return 'The odds calculation was cancelled. Retry odds, or keep playing.';
+    return describeError(err) + ' Your game is not affected; retry odds, or keep playing (odds are ' +
+      'calculated again after your next move).';
   }
 
   function handleOddsConflict(error, key) {
     const current = app.game;
-    const latest = parseGame(error.state);
-    if (latest && current && latest.id === current.id && latest.revision > current.revision) {
+    const latest = error.state ? parseGame(error.state) : null;
+    if (latest && current && latest.id === current.id &&
+        (latest.revision !== current.revision || latest.status !== current.status)) {
       adoptGame(latest);
-      showNotice({
-        id: 'stale',
-        tone: 'info',
-        title: 'Board updated',
-        message: 'This game changed elsewhere (for example in another tab), so the latest board is shown.'
-      });
       return;
     }
-    app.odds.error = {
-      key: key,
-      kind: 'http',
-      message: error.message || 'The odds request did not match the board on the server.'
-    };
+    app.odds.error = { key: key, kind: 'conflict', message: describeError(error) };
     renderOddsPanel();
   }
 
@@ -1700,7 +1362,7 @@
   }
 
   function render() {
-    renderConnection();
+    renderEngineStatus();
     renderPresets();
     renderHud();
     renderResult();
@@ -1710,10 +1372,13 @@
     renderGameMeta();
   }
 
-  function renderConnection() {
-    el.connection.dataset.state = app.connection;
-    setText(el.connectionText, app.connection === 'online' ? 'Server connected'
-      : app.connection === 'offline' ? 'Server unreachable' : 'Connecting...');
+  function renderEngineStatus() {
+    const state = app.engine.state;
+    el.engineStatus.dataset.state = state;
+    setText(el.engineStatusText, state === 'ready' ? 'Runs in your browser'
+      : state === 'error' ? 'Engine error' : 'Loading engine...');
+    el.engineStatus.title = state === 'error' && app.engine.error ? describeError(app.engine.error)
+      : state === 'ready' ? 'The game and its odds are computed locally in this tab.' : '';
   }
 
   function renderPresets() {
@@ -1789,13 +1454,13 @@
   }
 
   function renderEmptyState() {
-    const busy = app.loading || !!app.pendingCreate;
+    const busy = app.engine.state === 'loading' || (!!app.pendingStart && !app.loadError);
     el.boardEmptySpinner.hidden = !busy;
     el.boardEmptyIcon.hidden = busy || !(app.loadError && app.loadError.offline);
     el.boardEmptyRetry.hidden = busy;
     if (busy) {
-      setText(el.boardEmptyTitle, app.loading ? 'Restoring your game...' : 'Starting a new game...');
-      setText(el.boardEmptyText, 'Contacting the local game server.');
+      setText(el.boardEmptyTitle, app.engine.state === 'loading' ? 'Loading the game engine...' : 'Starting a new game...');
+      setText(el.boardEmptyText, 'The game and its odds run entirely in your browser.');
     } else if (app.loadError) {
       setText(el.boardEmptyTitle, app.loadError.title);
       setText(el.boardEmptyText, app.loadError.text);
@@ -1854,7 +1519,7 @@
         base = 'Empty, no adjacent mines';
       }
     } else if (isTerminal(game) && cell.mine !== null) {
-      // The server disclosed the layout because the game is over.
+      // The engine disclosed the layout because the game is over.
       if (cell.mine && cell.exploded) {
         cls += ' is-revealed is-mine is-exploded';
         html = ICON.mine;
@@ -1913,7 +1578,6 @@
 
   function renderBoard() {
     const game = app.game;
-    renderBusy();
     if (!game) {
       el.board.hidden = true;
       el.boardEmpty.hidden = false;
@@ -1925,7 +1589,7 @@
     el.boardEmpty.hidden = true;
     const refocus = ensureBoardDom(game.width, game.height);
     applyCellSize(false);
-    const interactive = !isTerminal(game) && !app.gameGone && !app.needsResync;
+    const interactive = !isTerminal(game) && !app.engine.fatal;
     el.boardFrame.dataset.status = game.status;
     el.board.dataset.status = game.status;
     el.board.dataset.interactive = interactive ? 'true' : 'false';
@@ -1991,7 +1655,7 @@
 
   // Short, player-oriented insight shown under the solver's own message. The
   // solver message already lists certain cells and reasons, so they are only
-  // repeated here when the server did not send a message.
+  // repeated here when the result carries no message.
   function oddsSummary(data) {
     const game = app.game;
     const verbose = !data.message;
@@ -2058,7 +1722,7 @@
       chips.push([formatCount(Math.round(meta.effective_sample_size)), 'effective samples',
         'How many independent samples the weighted samples are worth; too few means no estimate']);
     }
-    if (isNum(meta.elapsed_ms)) chips.push([formatMs(meta.elapsed_ms), 'solve time', 'Time the server spent on this position']);
+    if (isNum(meta.elapsed_ms)) chips.push([formatMs(meta.elapsed_ms), 'solve time', 'Time the solver spent on this position']);
     return chips;
   }
 
@@ -2098,16 +1762,14 @@
         badge = 'Waiting';
         message = 'Odds appear once a game is loaded.';
         break;
-      case 'gone':
+      case 'stopped':
         badge = 'Unavailable';
-        message = 'This game is no longer on the server, so there are no odds to show.';
+        message = 'The game engine stopped, so there are no odds for this game. Start a new game to keep playing.';
         break;
       case 'waiting':
         badge = 'Updating';
         tone = 'busy';
-        message = app.pendingCreate ? 'Starting a new game...'
-          : app.needsResync ? 'Waiting until the board is reloaded from the server...'
-          : 'Updating after your move...';
+        message = 'Starting a new game...';
         break;
       case 'ready':
         badge = 'Not started';
@@ -2135,7 +1797,7 @@
         break;
       case 'discarded':
         badge = 'Outdated';
-        message = 'The server answered for a different position, so that answer was ignored.';
+        message = 'The odds calculator answered for a different position, so that answer was ignored.';
         retry = true;
         break;
       case 'result': {
@@ -2340,7 +2002,7 @@
       return;
     }
     const game = app.game;
-    if (event.button === 0 && !app.flagMode && game && !isTerminal(game) && !isBusy() && !app.gameGone) {
+    if (event.button === 0 && !app.flagMode && game && !isTerminal(game) && !app.engine.fatal && !app.pendingStart) {
       const cell = game.cells[index];
       if (!cell.revealed && !cell.flagged) {
         app.pressing = true;
@@ -2587,7 +2249,11 @@
 
   async function retryFromEmpty() {
     const hadFocus = document.activeElement === el.boardEmptyRetry;
-    await initialLoad();
+    if (engine.status === 'ready' && !app.engine.fatal) startNewGame(app.settings);
+    else {
+      app.pendingStart = app.pendingStart || { config: app.settings, opts: {} };
+      await loadEngine();
+    }
     const active = document.activeElement;
     if (hadFocus && app.game && (!active || active === document.body)) restoreFocus();
   }
@@ -2595,13 +2261,13 @@
   function initElements() {
     [
       'board', 'board-frame', 'board-scroller', 'board-empty', 'board-empty-spinner', 'board-empty-icon',
-      'board-empty-title', 'board-empty-text', 'board-empty-retry', 'busy-pill', 'inspector', 'game-meta',
+      'board-empty-title', 'board-empty-text', 'board-empty-retry', 'inspector', 'game-meta',
       'notice-region', 'result', 'result-icon', 'result-title', 'result-detail', 'result-again', 'mines-left',
       'autosolve-toggle', 'autosolve-status',
       'mines-counter', 'mines-label', 'timer', 'face', 'face-use', 'mode-reveal', 'mode-flag', 'odds-toggle',
       'zoom-out', 'zoom-in', 'zoom-fit', 'new-game', 'custom-toggle', 'custom-form', 'custom-width',
       'custom-height', 'custom-mines', 'custom-width-error', 'custom-height-error', 'custom-mines-error',
-      'custom-mines-hint', 'custom-form-error', 'custom-dims', 'connection', 'connection-text', 'odds-panel',
+      'custom-mines-hint', 'custom-form-error', 'custom-dims', 'engine-status', 'engine-status-text', 'odds-panel',
       'odds-badge', 'odds-message', 'odds-detail', 'odds-meta', 'odds-retry', 'live', 'skip-link'
     ].forEach(function (id) {
       const node = document.getElementById(id);
@@ -2681,25 +2347,18 @@
 
     if (window.ResizeObserver) new ResizeObserver(scheduleAutoFit).observe(el.boardFrame);
     window.addEventListener('resize', scheduleAutoFit);
-    document.addEventListener('visibilitychange', function () {
-      if (!document.hidden && app.connection === 'offline') resync({ quiet: true });
-    });
-    window.addEventListener('online', function () {
-      if (app.connection === 'offline') resync({ quiet: true });
-    });
-    window.addEventListener('pageshow', function (event) {
-      if (event.persisted) resync({ quiet: true });
-    });
   }
 
+  // Every load starts a new game in this tab; only preferences carry over.
   function init() {
     initElements();
+    store.remove(LEGACY_GAME_KEY);
     loadSettings();
     loadPrefs();
     bindEvents();
     fillCustomForm();
     render();
-    initialLoad();
+    loadEngine();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

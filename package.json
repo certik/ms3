@@ -1,0 +1,20 @@
+{
+  "name": "minesweeper-static-tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Development-only JavaScript test tooling for the static Minesweeper site. The shipped site has no npm dependencies.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "npm run test:js",
+    "test:js": "node --test \"tests/js/*.test.mjs\"",
+    "test:js:unit": "node --test tests/js/abi.test.mjs tests/js/solver-host.test.mjs",
+    "test:browser": "playwright test --config tests/js/playwright.config.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.0"
+  }
+}
