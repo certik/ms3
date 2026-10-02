@@ -38,7 +38,7 @@ import { makeWasi, ProcExit } from '../third_party/corec/platform/js/wasi.js';
 import {
   BuildError, COREC_WASM_EXPORTS, HOST_IMPORTS, PLANNER_EXPORTS, REACTOR_FILE, ROOT, STATIC_FILES, VENDOR_FILES,
   abiVersion, auditWasmModule, buildReactor, buildSmoke, buildWasm, checkMemoryAdapters,
-  checkSiteReferences, checkSourcePolicy, checkWindowsImports, parseCoffSymbols, parseDumpbinImports,
+  checkSiteReferences, checkSourcePolicy, checkWindowsImports, checkWindowsStack, parseCoffSymbols, parseDumpbinImports,
   parseExportDeclarations, parseSuites, tryLinkWasm, verifyDist,
 } from './build.mjs';
 
@@ -136,7 +136,7 @@ function sourcePolicyProbes(scratch) {
 // The Windows audits (scripts/build.mjs) read dumpbin output, so they are
 // probed here on every platform: the forwarding adapters pass, while
 // recursion (an optimized base_memset calling memset), unreadable output and
-// a memory helper imported from a DLL are rejected.
+// a memory helper imported from a DLL and a stack relying on probes are rejected.
 function windowsAuditProbes() {
   const coff = (symbols) => ['', 'Dump of file build\\native\\obj\\x.obj', '', 'File Type: COFF OBJECT',
     '', 'COFF SYMBOL TABLE', '000 01047A8F ABS    notype       Static       | @comp.id',
@@ -171,8 +171,21 @@ function windowsAuditProbes() {
     'imports memory helper(s) memset', 'memset imported from a DLL');
   rejects(() => checkWindowsImports([], 'ms_tests.exe'), 'cannot read the imports',
     'unreadable dumpbin /imports output');
+  const headers = (reserve, commit) => ['OPTIONAL HEADER VALUES',
+    `          ${reserve} size of stack reserve`, `          ${commit} size of stack commit`, ''].join('\r\n');
+  checkWindowsStack(headers('100000', '100000'), 'ms_tests.exe');
+  check(true, 'the fixed 1 MiB Windows stack is fully committed');
+  for (const [listing, what] of [
+    [headers('100000', '1000'), 'the default 4 KiB commit with no stack probes'],
+    [headers('200000', '100000'), 'a reservation larger than the committed stack'],
+    [headers('200000', '200000'), 'a stack larger than the fixed budget'],
+    ['100000 size of stack reserve', 'a missing stack commit'],
+    ['', 'unreadable dumpbin /headers output'],
+  ]) {
+    rejects(() => checkWindowsStack(listing, 'ms_tests.exe'), 'must reserve and commit', what);
+  }
   console.log('windows audits: forwarding adapters accepted; recursion, DLL memory helpers and ' +
-    'unreadable dumpbin output rejected');
+    'uncommitted stacks or unreadable dumpbin output rejected');
 }
 
 // The production export list comes from export_name markers in

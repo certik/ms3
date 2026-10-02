@@ -173,6 +173,9 @@ const MEMORY_HELPER_ADVICE =
 const MACOS_STACK_PROTECTOR = ['___stack_chk_fail', '___stack_chk_guard'];
 // Windows: corec links /nodefaultlib against these import libraries only.
 const WINDOWS_DLLS = ['kernel32.dll', 'shell32.dll'];
+// corec's freestanding __chkstk is a no-op. Commit the fixed stack up front
+// so a frame larger than a page cannot skip Windows' stack-growth guard.
+export const WINDOWS_STACK_BYTES = 1 << 20;
 
 export class BuildError extends Error {}
 
@@ -537,9 +540,24 @@ function auditWindowsBinary(binary) {
   const imports = parseDumpbinImports(runChecked(dumpbin, ['/nologo', '/imports', binary],
     { capture: true, quiet: true }).stdout);
   checkWindowsImports(imports, rel(binary));
+  checkWindowsStack(runChecked(dumpbin, ['/nologo', '/headers', binary],
+    { capture: true, quiet: true }).stdout, rel(binary));
   console.log(`audit: ${rel(binary)} depends only on ${dlls.join(', ')} (no CRT); none of its ` +
     `${imports.length} imports is a memory helper (${COMPILER_MEM_HELPERS.join('/')}: ` +
-    `${COMPILER_MEM_SOURCE})`);
+    `${COMPILER_MEM_SOURCE}); its ${WINDOWS_STACK_BYTES}-byte stack is fully committed`);
+}
+
+export function checkWindowsStack(listing, binary) {
+  const size = (kind) => {
+    const match = new RegExp(`^\\s*([0-9a-f]+)\\s+size of stack ${kind}\\s*$`, 'im').exec(listing);
+    return match ? Number.parseInt(match[1], 16) : null;
+  };
+  const reserve = size('reserve');
+  const commit = size('commit');
+  if (reserve !== WINDOWS_STACK_BYTES || commit !== WINDOWS_STACK_BYTES) {
+    fail(`${binary} must reserve and commit ${WINDOWS_STACK_BYTES} stack bytes ` +
+      `(dumpbin: reserve=${reserve}, commit=${commit}); corec's freestanding __chkstk does not probe pages`);
+  }
 }
 
 function isMemoryHelper(symbol) {
@@ -633,6 +651,7 @@ function buildNativeMsvc(suites, platform) {
   auditWindowsAdapters(objectPath(objDir, COMPILER_MEM_SOURCE, '.obj'),
     objectPath(objDir, `${COREC}/base/mem.c`, '.obj'));
   link(msvcTool('link'), ['/nologo', '/subsystem:console', '/nodefaultlib', '/entry:_start',
+    `/stack:${WINDOWS_STACK_BYTES},${WINDOWS_STACK_BYTES}`,
     'kernel32.lib', 'shell32.lib', ...objects.map(rel), `/out:${rel(out)}`]);
   auditWindowsBinary(out);
   return out;

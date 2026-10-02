@@ -616,7 +616,12 @@ may import only corec's system interface functions and the clock. On Windows,
 MSVC-compatible compilers call `memset` and `memcpy` to initialize and copy
 some local structures and arrays; `c/compiler_mem.c` forwards exactly those
 two to corec's `base_memset` and `base_memcpy`, in the Windows test build
-only.
+only. The pinned Windows platform has a no-op `__chkstk`, so the native test
+executable reserves and commits its fixed 1 MiB stack up front rather than
+relying on stack probes to grow it. The build audits both sizes in the
+executable headers. This prevents large stack frames from skipping the
+stack-growth guard page without adding a C runtime or increasing the stack
+limit.
 
 ## Engine ABI
 
