@@ -689,14 +689,17 @@ test('a planner trap fails only the advice; the game goes on and a retry recreat
 
 test('a worker that cannot start fails the advice without touching the game or its odds', async () => {
   const createWorker = fakeWorkerFactory();
-  await withClient({ createWorker }, async (client) => {
+  let now = 1000;
+  await withClient({ createWorker, now: () => now }, async (client) => {
     const state = playing(client);
     const pending = client.recommendation(routing(state));
     await flush();
     createWorker.created[0].crash('Failed to fetch module script');
     await rejectsCode(pending, 'solver_unavailable', (e) => assert.equal(e.kind, 'worker'));
     assert.equal(client.status, 'ready');
-    assert.deepEqual(client.state(), state);
+    now = 2250;
+    assert.deepEqual(client.state(), Object.assign({}, state, { elapsed_seconds: 1.25 }),
+      'the board stays unchanged and its timer keeps running after the advisor fails');
     assert.equal(createWorker.created[0].terminated, true);
     // The next request (odds here) starts a fresh worker.
     const odds = client.odds(routing(state));
