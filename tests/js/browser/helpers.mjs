@@ -1,7 +1,7 @@
 // Shared helpers for the browser specs. Everything here is test-side
 // instrumentation: the site itself has no test hooks.
 import { expect } from '@playwright/test';
-import { forgeResult } from '../support/forge.mjs';
+import { forgePlan, forgeResult } from '../support/forge.mjs';
 
 export { ROOT_URL, NESTED_URL, NESTED_BASE, REACTOR_FILE, VENDOR_PATHS } from './site.mjs';
 
@@ -24,12 +24,12 @@ export async function fixEntropy(page, seed = 1) {
   }, seed);
 }
 
-// Counts solver workers, solve requests and terminations without changing
-// what they do.
+// Counts solver workers, solve and plan (move advice) requests and
+// terminations without changing what they do.
 export async function instrumentWorkers(page) {
   await page.addInitScript(() => {
     const Native = window.Worker;
-    const stats = { created: 0, terminated: 0, solves: 0 };
+    const stats = { created: 0, terminated: 0, solves: 0, plans: 0 };
     window.__msWorkerStats = stats;
     window.Worker = class extends Native {
       constructor(url, options) {
@@ -39,6 +39,7 @@ export async function instrumentWorkers(page) {
 
       postMessage(message, transfer) {
         if (message && message.type === 'solve') stats.solves++;
+        if (message && message.type === 'plan') stats.plans++;
         return transfer === undefined ? super.postMessage(message) : super.postMessage(message, transfer);
       }
 
@@ -77,8 +78,14 @@ export function track(page) {
  *                     MS_ERR_INCONSISTENT (48), as for clues no layout fits
  *   { forge: spec }   the worker's result is replaced by forgeResult(spec)
  *                     (support/forge.mjs): C still validates it before
- *                     anything is shown
+ *                     anything is shown; with an array of specs the n-th
+ *                     solve uses the n-th spec (the last one after that)
  *   { corrupt: 'hash' }  the result names another observation (C refuses it)
+ * and for move advice ('plan' requests):
+ *   { planDelayMs }   every plan first blocks the worker thread
+ *   { planTrap: true }  ms_plan_observation throws like a trap
+ *   { planForge: spec }  the worker's plan is replaced by forgePlan(spec)
+ *                     (support/forge.mjs); C's ms_check_plan still applies
  * The real probability-worker.js still runs; a patch module is imported
  * before it.
  */
@@ -108,42 +115,63 @@ export async function unpatchWorker(page) {
 function patchSource(options) {
   return `const OPTIONS = ${JSON.stringify(options)};
 let observation = null;
+let planObservation = null;
+let solves = 0;
 self.addEventListener('message', (event) => {
   const data = event.data;
-  if (!data || data.type !== 'solve') return;
-  observation = data.observation;
-  if (OPTIONS.delayMs) {
-    const end = Date.now() + OPTIONS.delayMs;
-    while (Date.now() < end) { /* an uninterruptible solve */ }
+  if (!data || (data.type !== 'solve' && data.type !== 'plan')) return;
+  if (data.type === 'plan') planObservation = data.observation;
+  else {
+    observation = data.observation;
+    solves++;
+  }
+  const delay = data.type === 'plan' ? OPTIONS.planDelayMs : OPTIONS.delayMs;
+  if (delay) {
+    const end = Date.now() + delay;
+    while (Date.now() < end) { /* an uninterruptible solve or plan */ }
   }
 });
-if (OPTIONS.trap || OPTIONS.inconsistent) {
+if (OPTIONS.trap || OPTIONS.inconsistent || OPTIONS.planTrap) {
   const instantiate = WebAssembly.instantiate;
   WebAssembly.instantiate = async (...args) => {
     const instance = await instantiate(...args);
-    return { exports: Object.assign({}, instance.exports, {
-      ms_solve_observation: () => {
+    const replaced = {};
+    if (OPTIONS.trap || OPTIONS.inconsistent) {
+      replaced.ms_solve_observation = () => {
         if (OPTIONS.inconsistent) return 48;
         throw new WebAssembly.RuntimeError('unreachable');
-      }
-    }) };
+      };
+    }
+    if (OPTIONS.planTrap) {
+      replaced.ms_plan_observation = () => {
+        throw new WebAssembly.RuntimeError('unreachable');
+      };
+    }
+    return { exports: Object.assign({}, instance.exports, replaced) };
   };
 }
-if (OPTIONS.forge || OPTIONS.corrupt) {
+if (OPTIONS.forge || OPTIONS.corrupt || OPTIONS.planForge) {
   const post = self.postMessage.bind(self);
   self.postMessage = (message, transfer) => {
-    if (message && message.type === 'result') {
-      const result = OPTIONS.forge ? forgeResult(message.result, observation, OPTIONS.forge) : message.result;
+    if (message && message.type === 'result' && (OPTIONS.forge || OPTIONS.corrupt)) {
+      const spec = Array.isArray(OPTIONS.forge) ? OPTIONS.forge[Math.min(solves, OPTIONS.forge.length) - 1]
+        : OPTIONS.forge;
+      const result = spec ? forgeResult(message.result, observation, spec) : message.result;
       if (OPTIONS.corrupt === 'hash') {
         const dv = new DataView(result);
         dv.setUint32(32, dv.getUint32(32, true) ^ 1, true);
       }
       return post(Object.assign({}, message, { result: result }), [result]);
     }
+    if (message && message.type === 'plan-result' && OPTIONS.planForge) {
+      const result = forgePlan(message.result, planObservation, OPTIONS.planForge);
+      return post(Object.assign({}, message, { result: result }), [result]);
+    }
     return post(message, transfer);
   };
 }
 ${forgeResult.toString()}
+${forgePlan.toString()}
 `;
 }
 
@@ -228,6 +256,17 @@ export async function learnLayout(page, first) {
 export async function oddsSettled(page) {
   await expect(page.locator('#odds-panel')).not.toHaveAttribute('data-phase', /^(loading|waiting)$/);
   return page.locator('#odds-panel').getAttribute('data-phase');
+}
+
+// The move-advice line below the board (data-state: off, loading, exact,
+// estimated, none, unavailable or error).
+export function advice(page) {
+  return page.locator('#advice');
+}
+
+export async function adviceSettled(page) {
+  await expect(advice(page)).not.toHaveAttribute('data-state', /^(off|loading)$/);
+  return advice(page).getAttribute('data-state');
 }
 
 export async function enableOdds(page) {

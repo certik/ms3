@@ -32,6 +32,11 @@
         <circle cx="12" cy="12" r="6.3" style="fill:var(--mine-body,#0b1120)"/>
         <circle cx="9.8" cy="9.8" r="1.8" style="fill:var(--mine-shine,#f8fafc)" opacity="0.9"/>
       </symbol>
+      <symbol id="i-target" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="7.4" fill="none" style="stroke:var(--advice-edge,#0b1120)" stroke-width="5.2"/>
+        <circle cx="12" cy="12" r="7.4" fill="none" style="stroke:var(--advice-ink,#f8fafc)" stroke-width="2.6"/>
+        <circle cx="12" cy="12" r="2.7" style="fill:var(--advice-ink,#f8fafc);stroke:var(--advice-edge,#0b1120)" stroke-width="1.3"/>
+      </symbol>
       <symbol id="i-check" viewBox="0 0 24 24">
         <path d="M5 12.6 9.4 17 19 7.4" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
       </symbol>
@@ -268,6 +273,17 @@
         <p class="game-meta" id="game-meta"></p>
       </div>
       <p class="autosolve-status" id="autosolve-status" role="status" hidden></p>
+      <div class="advice" id="advice" data-state="off" hidden>
+        <svg class="icon advice-badge" aria-hidden="true"><use href="#i-target"></use></svg>
+        <div class="advice-body">
+          <p class="advice-title" id="advice-title"></p>
+          <p class="advice-detail" id="advice-detail"></p>
+        </div>
+        <button type="button" class="btn btn-small" id="advice-retry" hidden>
+          <svg class="icon" aria-hidden="true"><use href="#i-restart"></use></svg>
+          <span>Retry advice</span>
+        </button>
+      </div>
       <p class="visually-hidden" id="board-help">Arrow keys move between cells. Enter or Space reveals a cell, or opens the neighbors of a number whose flags are all placed. F toggles a flag.</p>
     </section>
 
@@ -298,6 +314,7 @@
             <li><span class="legend-cell is-proven-safe" aria-hidden="true"><svg class="icon"><use href="#i-check"></use></svg></span><span><strong>Proven safe</strong>, certain from the clues</span></li>
             <li><span class="legend-cell is-proven-mine" aria-hidden="true"><svg class="icon"><use href="#i-mine"></use></svg></span><span><strong>Proven mine</strong>, certain from the clues</span></li>
             <li><span class="legend-cell is-plain" aria-hidden="true"></span><span><strong>No number</strong>: odds unavailable, nothing is guessed</span></li>
+            <li><span class="legend-cell heat-3 is-advised" aria-hidden="true"><span class="odds">31%</span><svg class="icon advice-icon"><use href="#i-target"></use></svg></span><span><strong>Suggested move</strong> once nothing certain is left, explained below the board</span></li>
           </ul>
         </div>
 
@@ -305,9 +322,10 @@
           <h3 class="legend-title">Exact or estimated?</h3>
           <p><span class="tag tag-exact">Exact</span> Every mine layout that fits the revealed numbers and the total mine count is counted, and each cell shows the share of those layouts with a mine there.</p>
           <p><span class="tag tag-estimate">Estimated</span> When the frontier is too tangled to count in time, weighted random layouts that fit the clues are sampled instead. These numbers carry a ~, can be substantially wrong and have no guaranteed error bound. Only the check and mine markers are certain.</p>
+          <p><span class="tag tag-advice">Suggested move</span> When no cell is certain, the ringed cell aims for the best chance to win the whole game, which is not always the lowest risk. <strong>Exact</strong> means every layout that fits the clues was searched. Otherwise it is an <strong>estimate</strong> from simulated games on sampled layouts, with no guarantee. It is only a hint: autosolve never plays it.</p>
           <p class="flag-note">
             <svg class="icon" aria-hidden="true"><use href="#i-flag"></use></svg>
-            <span>Flags are your notes. The solver does not treat them as mines and never looks at the hidden layout.</span>
+            <span>Flags are your notes. The solver and the move advisor do not treat them as mines and never look at the hidden layout.</span>
           </p>
         </div>
       </section>

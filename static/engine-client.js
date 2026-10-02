@@ -7,17 +7,20 @@
  *     authoritative C game, input validation, public observations, the
  *     revision-bound odds cache and atomic autosolve batches. Its calls are
  *     small and synchronous.
- *   - the solver instance runs C ms_solve in a dedicated worker
- *     (probability-worker.js). It only ever receives a copied public
- *     observation plus routing numbers: never flags, the hidden board, the
- *     game's seed or its memory.
+ *   - the solver instance runs C ms_solve, and the move advisor's ms_plan,
+ *     in a dedicated worker (probability-worker.js), one request at a time.
+ *     It only ever receives a copied public observation plus routing
+ *     numbers: never flags, the hidden board, the game's seed or its memory.
  *
  * A synchronous WASM call cannot be interrupted by a message, so obsolete
  * inference is cancelled by terminating the worker; the next request starts
  * a new one from the cached WebAssembly.Module. Every request carries the
  * game generation, revision and a request id; answers that do not match the
  * current request are ignored, and C validates each result again against a
- * freshly built observation before accepting its proofs.
+ * freshly built observation before accepting its proofs (odds) or letting
+ * the page show it (move advice, which is never played or cached as odds).
+ * Odds always come first: a plan starts only once no solve is in flight,
+ * and an odds request abandons a plan that is still running.
  *
  * All methods return the former server's JSON shapes (GameState and odds
  * payloads), so the page's strict parsers stay unchanged. Failures are
@@ -33,6 +36,7 @@ import {
   REVISION_MAX,
   checkWorkerMessage,
   compileEngineModule,
+  decodePlan,
   decodeResult,
   decodeView,
   describeThrown,
@@ -51,13 +55,28 @@ import {
 export const ENGINE_WASM_URL = new URL('./minesweeper.wasm', import.meta.url);
 export const SOLVER_WORKER_URL = new URL('./probability-worker.js', import.meta.url);
 
-// A hang detector only: the solver's own time budget is 1.5 seconds.
+// A hang detector only: the solver's own time budget is 1.5 seconds, the
+// planner's 3 seconds.
 export const SOLVER_TIMEOUT_MS = 60000;
 
 const RESULT_STATUS_UNAVAILABLE = 3;
+const RESULT_STATUS_NOT_STARTED = 4; // and 5, finished: placeholders without odds
+
+// Worker request kinds: message type, answer type and what the page calls
+// the job in messages.
+const JOBS = Object.freeze({
+  solve: { reply: 'result', name: 'odds calculator', stat: 'solvesSent' },
+  plan: { reply: 'plan-result', name: 'move advisor', stat: 'plansSent' }
+});
 
 function aborted() {
   return new EngineError('aborted', 'The odds request was cancelled because the board changed.', { kind: 'aborted' });
+}
+
+function planAborted() {
+  return new EngineError('aborted', 'The move advice was cancelled because the board or the odds changed.', {
+    kind: 'aborted'
+  });
 }
 
 function disposed() {
@@ -123,11 +142,15 @@ function defaultRandomSeed() {
  * Owns at most one solver worker and at most one job at a time.
  *
  *   solve(job)  starts the worker if needed (posting the cached module),
- *               sends one solve request and resolves with the result bytes
- *               (a transferred ArrayBuffer wrapped in a Uint8Array).
- *   cancel()    rejects the job with an `aborted` error and terminates the
- *               worker if it is starting or solving; an idle ready worker is
- *               kept for the next request.
+ *               sends one request and resolves with the answer bytes (a
+ *               transferred ArrayBuffer wrapped in a Uint8Array). job.kind
+ *               is 'solve' (default: odds, answered by 'result') or 'plan'
+ *               (move advice, answered by 'plan-result'); an answer of the
+ *               other kind is a protocol violation.
+ *   cancel(kind) rejects the job with an `aborted` error and terminates the
+ *               worker if it is starting or working; an idle ready worker is
+ *               kept for the next request. With a kind, only a job of that
+ *               kind is cancelled.
  *   recycle()   drops an idle worker whose answer was rejected.
  *
  * Any worker failure (script/module load error, uncaught exception, trap
@@ -145,16 +168,26 @@ export class SolverHost {
     this.ready = null; // promise resolved once the current worker is initialized
     this.job = null;
     this.nextId = 1;
-    this.stats = { workersCreated: 0, workersTerminated: 0, solvesSent: 0, lateMessages: 0 };
+    this.stats = { workersCreated: 0, workersTerminated: 0, solvesSent: 0, plansSent: 0, lateMessages: 0 };
   }
 
   get busy() {
     return this.job !== null;
   }
 
+  // 'solve', 'plan' or null when idle.
+  get jobKind() {
+    return this.job ? this.job.kind : null;
+  }
+
   solve(request) {
     if (this.job) throw new Error('SolverHost.solve: a job is already running');
+    const kind = request.kind === undefined ? 'solve' : request.kind;
+    if (!Object.prototype.hasOwnProperty.call(JOBS, kind)) {
+      throw new Error('SolverHost.solve: unknown request kind ' + String(kind));
+    }
     const job = {
+      kind: kind,
       id: this.nextId++,
       generation: request.generation,
       revision: request.revision,
@@ -169,10 +202,11 @@ export class SolverHost {
       job.reject = reject;
     });
     this.job = job;
+    const name = JOBS[kind].name;
     job.timer = setTimeout(() => {
       if (this.job !== job) return;
       this.fail(job, workerFailure('solver_timeout',
-        'The odds calculator did not finish within ' + Math.round(this.timeoutMs / 1000) + ' seconds.'));
+        'The ' + name + ' did not finish within ' + Math.round(this.timeoutMs / 1000) + ' seconds.'));
     }, this.timeoutMs);
     this.ensureWorker().then(() => {
       if (this.job !== job) return;
@@ -185,7 +219,7 @@ export class SolverHost {
       // instead of leaving it pending until the watchdog.
       try {
         this.worker.postMessage({
-          type: 'solve',
+          type: kind,
           id: job.id,
           generation: job.generation,
           revision: job.revision,
@@ -193,22 +227,22 @@ export class SolverHost {
         }, [buffer]);
       } catch (error) {
         this.fail(job, workerFailure('solver_unavailable',
-          'The odds calculator could not receive the position: ' + describeThrown(error) + '.', error));
+          'The ' + name + ' could not receive the position: ' + describeThrown(error) + '.', error));
         return;
       }
-      this.stats.solvesSent++;
+      this.stats[JOBS[kind].stat]++;
     }, (error) => {
       if (this.job === job) this.fail(job, error);
     });
     return job.promise;
   }
 
-  cancel() {
+  cancel(kind) {
     const job = this.job;
-    if (!job) return false;
+    if (!job || (kind !== undefined && job.kind !== kind)) return false;
     this.finish(job);
     this.discardWorker();
-    job.reject(aborted());
+    job.reject(job.kind === 'plan' ? planAborted() : aborted());
     return true;
   }
 
@@ -294,14 +328,15 @@ export class SolverHost {
     }
     const job = this.job;
     if (!settle.done || !job || message.id !== job.id ||
-        message.generation !== job.generation || message.revision !== job.revision) {
-      // A live worker only ever answers the job it was given.
+        message.generation !== job.generation || message.revision !== job.revision ||
+        (message.type !== 'error' && message.type !== JOBS[job.kind].reply)) {
+      // A live worker only ever answers the job it was given, in its kind.
       this.onWorkerError(worker, settle, workerFailure('invalid_message',
         'The odds calculator answered a request it was not given.'));
       return;
     }
     this.finish(job);
-    if (message.type === 'result') {
+    if (message.type !== 'error') {
       job.resolve(new Uint8Array(message.result));
       return;
     }
@@ -367,7 +402,20 @@ export class SolverHost {
  *                 atomic batch (available false: no accepted result yet).
  * state()         current GameState.
  * odds(req)       { generation, revision } -> Promise of the odds payload.
+ * recalculateOdds(req)  as odds(), but a playing position is solved anew even
+ *                 when C holds a reusable answer for it (a recovery the
+ *                 player asks for; never automatic).
  * cancelOdds()    abandons the odds request in flight (terminates the worker).
+ * recommendation(req)  { generation, revision } -> Promise of the move
+ *                 advice for that position (wasm-host.js decodePlan shape):
+ *                 planned in the solver worker from a snapshot of the public
+ *                 observation, after any odds solve in flight, and shown only
+ *                 once C's ms_check_plan binds it to the current position.
+ *                 A plan already checked for this game is reused, after the
+ *                 same check, while the observation is unchanged (flags are
+ *                 not part of it), unless it is unavailable: those are
+ *                 planned anew. Advice is never played or cached as odds.
+ * cancelRecommendation()  abandons the advice request in flight.
  * restart()       replaces a failed game instance (the old game is lost),
  *                 reusing the module that started before; after a failed
  *                 start, load()/restart() fetch and compile the file again.
@@ -395,6 +443,10 @@ export class EngineClient {
     this.epoch = 0; // bumped by dispose(): older loads never complete into it
     this.solver = null;
     this.job = null; // the odds request in flight: { generation, revision, promise }
+    this.planJob = null; // the advice request in flight: { generation, revision, promise }
+    // The latest plan C accepted for the current game: { generation, bytes,
+    // observation }, reused while ms_check_plan still accepts it.
+    this.lastPlan = null;
   }
 
   load() {
@@ -422,6 +474,8 @@ export class EngineClient {
   restart() {
     if (this.status === 'disposed') return Promise.reject(disposed());
     this.cancelOdds();
+    this.cancelRecommendation();
+    this.lastPlan = null;
     this.engine = null;
     if (!this.loading) {
       this.status = 'idle';
@@ -433,6 +487,8 @@ export class EngineClient {
   dispose() {
     this.epoch++;
     this.cancelOdds();
+    this.cancelRecommendation();
+    this.lastPlan = null;
     if (this.solver) this.solver.dispose();
     this.solver = null;
     this.engine = null;
@@ -461,8 +517,10 @@ export class EngineClient {
     const seed = (this.options.randomSeed || defaultRandomSeed)();
     if (!seed || !isU32(seed.lo) || !isU32(seed.hi)) throw new Error('randomSeed must return two uint32 words');
     this.guard(() => engine.newGame(width, height, mines, seed.lo, seed.hi), { width: width, height: height, mines: mines });
-    // The previous game and any odds request for it are gone.
+    // The previous game and any odds or advice request for it are gone.
     this.cancelOdds();
+    this.cancelRecommendation();
+    this.lastPlan = null;
     return this.state();
   }
 
@@ -521,20 +579,43 @@ export class EngineClient {
    * 'aborted' when the board changes or cancelOdds() is called first.
    */
   async odds(request) {
+    return this.requestOdds(request, 'odds', false);
+  }
+
+  /*
+   * odds() for a position the player wants solved again: a playing position
+   * goes to the worker even when C holds a reusable exact or approximate
+   * answer for it, and the new answer, once C accepts it, replaces the stored
+   * one whatever its status (C's rule for every accepted result). Ready and
+   * finished games still get their placeholders, and a solve already in
+   * flight for the position is shared. Same validation and errors as odds().
+   * For explicit recovery only, e.g. when the move advisor found a certainty
+   * the cached sampled odds could not prove; nothing calls it automatically.
+   */
+  async recalculateOdds(request) {
+    return this.requestOdds(request, 'recalculateOdds', true);
+  }
+
+  async requestOdds(request, name, fresh) {
     const engine = this.requireEngine();
-    requireRequest(request, ['generation', 'revision'], 'odds');
+    requireRequest(request, ['generation', 'revision'], name);
     const routing = routingOf(request);
     if (!Number.isInteger(routing.generation)) this.rejectRouting(routing, request);
     const job = this.job;
     if (job && job.generation === routing.generation && job.revision === routing.revision) return job.promise;
     this.cancelOdds();
     const cached = this.guard(() => engine.cachedResult(routing.generation, routing.revision), routing);
+    const status = cached ? readResultHeader(cached).status : 0;
     // Unavailable answers are never reused for display: a retry recomputes.
-    if (cached && readResultHeader(cached).status !== RESULT_STATUS_UNAVAILABLE) {
+    // A fresh request takes only the placeholders of games without odds.
+    if (cached && status !== RESULT_STATUS_UNAVAILABLE && (!fresh || status >= RESULT_STATUS_NOT_STARTED)) {
       return this.servedOdds(cached, routing);
     }
     const observation = this.guard(() => engine.observe(routing.generation, routing.revision), routing);
     const header = this.decode(() => readObservationHeader(observation));
+    // Odds come first: advice still being planned is abandoned (the page asks
+    // again once these odds are shown).
+    this.cancelRecommendation();
     const next = { generation: routing.generation, revision: routing.revision, promise: null };
     next.promise = this.solverHost().solve({
       generation: routing.generation,
@@ -556,7 +637,50 @@ export class EngineClient {
 
   cancelOdds() {
     this.job = null;
-    if (this.solver) this.solver.cancel();
+    if (this.solver) this.solver.cancel('solve');
+  }
+
+  /*
+   * Move advice for the current game at (generation, revision): the
+   * planner's suggestion for the next reveal, its estimated or exact chances,
+   * or why there is none (status 'none' / 'unavailable'). Waits for an odds
+   * solve in flight, snapshots the public observation (C refuses stale,
+   * not-started and finished positions first), plans it in the worker and
+   * returns the answer only if it is still the current position, decodes
+   * strictly and passes ms_check_plan. Concurrent requests for the same
+   * position share one plan. Rejects with kind 'aborted' when the board
+   * changes, odds are requested or cancelRecommendation() is called first,
+   * and with kind 'worker' for worker failures and refused plans (the game
+   * and its odds are never touched).
+   */
+  async recommendation(request) {
+    this.requireEngine();
+    requireRequest(request, ['generation', 'revision'], 'recommendation');
+    const routing = routingOf(request);
+    if (!Number.isInteger(routing.generation)) this.rejectRouting(routing, request);
+    const job = this.planJob;
+    if (job && job.generation === routing.generation && job.revision === routing.revision) return job.promise;
+    this.cancelRecommendation();
+    const reused = this.reusePlan(routing);
+    if (reused) return reused;
+    const next = { generation: routing.generation, revision: routing.revision, promise: null };
+    this.planJob = next;
+    next.promise = this.plan(next, routing).then((payload) => {
+      if (this.planJob === next) this.planJob = null;
+      return payload;
+    }, (error) => {
+      if (this.planJob === next) this.planJob = null;
+      throw error;
+    });
+    // Callers may drop an obsolete request; its cancellation is not an error.
+    next.promise.catch(() => {});
+    return next.promise;
+  }
+
+  cancelRecommendation() {
+    const job = this.planJob;
+    this.planJob = null;
+    if (job && this.solver) this.solver.cancel('plan');
   }
 
   get solverStats() {
@@ -623,6 +747,7 @@ export class EngineClient {
         this.status = 'failed';
         this.failure = error;
         this.cancelOdds();
+        this.cancelRecommendation();
         throw error;
       }
       if (error.kind === 'conflict' && context) {
@@ -656,6 +781,7 @@ export class EngineClient {
       this.status = 'failed';
       this.failure = error;
       this.cancelOdds();
+      this.cancelRecommendation();
       throw error;
     }
   }
@@ -665,8 +791,117 @@ export class EngineClient {
     if (changed) {
       const job = this.job;
       if (job && (job.generation !== state.generation || job.revision !== state.revision)) this.cancelOdds();
+      const plan = this.planJob;
+      if (plan && (plan.generation !== state.generation || plan.revision !== state.revision)) {
+        this.cancelRecommendation();
+      }
     }
     return { state: state, changed: changed };
+  }
+
+  // The advice job: after any odds solve in flight, a snapshot of the
+  // public observation goes to the worker as a 'plan' request.
+  async plan(next, routing) {
+    while (this.job) {
+      await this.job.promise.catch(() => {});
+      if (this.planJob !== next) throw planAborted();
+    }
+    if (this.planJob !== next) throw planAborted();
+    const engine = this.requireEngine();
+    const observation = this.guard(() => engine.observe(routing.generation, routing.revision), routing);
+    this.decode(() => readObservationHeader(observation));
+    const snapshot = observation.slice(); // the worker receives (and detaches) its own copy
+    const bytes = await this.solverHost().solve({
+      kind: 'plan',
+      generation: routing.generation,
+      revision: routing.revision,
+      observation: observation
+    });
+    if (this.planJob !== next) throw planAborted();
+    return this.acceptPlan(bytes, snapshot, routing);
+  }
+
+  /*
+   * Worker plan bytes are decoded strictly against the observation they
+   * answer, then C's ms_check_plan binds them to the current position
+   * (observation hash, hidden cell); only then may the page show them. A
+   * refusal fails this advice request only (kind 'worker', the worker is
+   * recycled); nothing reaches the game, its odds cache or autosolve.
+   */
+  acceptPlan(bytes, observation, routing) {
+    const engine = this.requireEngine();
+    const state = this.currentPlanState(routing);
+    let payload;
+    try {
+      payload = this.planPayload(bytes, observation, state);
+    } catch (error) {
+      if (!(error instanceof EngineError)) throw error;
+      throw this.rejectWorkerPlan(error);
+    }
+    try {
+      this.guard(() => engine.checkPlan(routing.generation, routing.revision, bytes), routing);
+    } catch (error) {
+      if (error instanceof EngineError && (error.code === 'invalid_result' || error.code === 'invalid_buffer')) {
+        throw this.rejectWorkerPlan(error);
+      }
+      throw error;
+    }
+    // Unavailable plans are budget or evidence shortfalls: never reused, so
+    // asking again plans anew (as unavailable odds are solved anew).
+    this.lastPlan = payload.status === 'unavailable' ? null
+      : { generation: routing.generation, bytes: bytes, observation: observation };
+    return payload;
+  }
+
+  /*
+   * The last accepted plan of this game, when C still accepts it for
+   * (generation, revision): the public observation is unchanged (the same
+   * position, or flag-only revisions since). Null when there is none or C
+   * refuses it (invalid_result: the position changed). Conflicts (stale,
+   * finished) are thrown like any request's.
+   */
+  reusePlan(routing) {
+    const last = this.lastPlan;
+    if (!last || last.generation !== routing.generation) return null;
+    const engine = this.requireEngine();
+    try {
+      this.guard(() => engine.checkPlan(routing.generation, routing.revision, last.bytes), routing);
+    } catch (error) {
+      if (error instanceof EngineError && error.code === 'invalid_result') {
+        this.lastPlan = null;
+        return null;
+      }
+      throw error;
+    }
+    const state = this.currentPlanState(routing);
+    try {
+      return this.planPayload(last.bytes, last.observation, state);
+    } catch (error) {
+      if (!(error instanceof EngineError)) throw error;
+      this.lastPlan = null;
+      return null;
+    }
+  }
+
+  rejectWorkerPlan(cause) {
+    if (this.solver) this.solver.recycle();
+    return new EngineError('invalid_plan', 'The move advisor returned a suggestion that does not fit this board, ' +
+      'so it was not used.', { status: cause.status, kind: 'worker', cause: cause });
+  }
+
+  // The current state, which must still be the position being advised.
+  currentPlanState(routing) {
+    const state = this.state();
+    if (state.generation !== routing.generation || state.revision !== routing.revision) throw planAborted();
+    return state;
+  }
+
+  planPayload(bytes, observation, state) {
+    return decodePlan(bytes, observation, {
+      gameId: state.id,
+      generation: state.generation,
+      revision: state.revision
+    });
   }
 
   solverHost() {

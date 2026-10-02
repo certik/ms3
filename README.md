@@ -5,17 +5,20 @@ Online: https://certik.github.io/ms3/
 A browser Minesweeper game with an optional **mine-odds overlay**. Turn it on
 and every hidden cell shows its chance of holding a mine. The odds are exact
 when the position can be counted within the time budget. Otherwise they are
-marked as estimates, or not shown at all.
+marked as estimates, or not shown at all. When no move is certain, the page
+also marks a **suggested next cell**, chosen for the best chance to win the
+whole game and labeled exact or estimated.
 
 Every game rule and every probability calculation is freestanding C on
 [corec](https://github.com/certik/corec), with no C library. It is compiled
 once into a single WebAssembly module, `minesweeper.wasm`, which runs
 entirely in the browser. The page creates two single-threaded instances of
 that module: one plays the game on the main thread, the other calculates odds
-in a dedicated worker. JavaScript runs no authoritative game or probability
-algorithm: it draws the page, validates input, shows hints and schedules
-odds requests and autosolve passes, while the C engine decides every move and
-every odds result. The built site is a folder of static files with no server
+in a dedicated worker, which also plans the move advice. JavaScript runs no
+authoritative game, probability or planning algorithm: it draws the page,
+validates input, shows hints and schedules odds, advice and autosolve
+requests, while the C engine decides every move, every odds result and every
+suggestion. The built site is a folder of static files with no server
 code, no runtime dependencies and no external requests.
 
 ## Quick start
@@ -68,7 +71,7 @@ engine.
   missing or was built for a different engine ABI version, the page says so
   and offers **Try again**. If the game engine stops, the board stays visible
   but frozen, and a new game starts a fresh engine instance. Failures of the
-  odds calculation never affect the game.
+  odds calculation or of the move advice never affect the game.
 
 ## How to play
 
@@ -99,8 +102,8 @@ Open every cell that does not hide a mine. A number tells you how many of the
   inside the board frame instead.
 - The timer starts on your first reveal and stops when you win or lose.
   Press **New game**, the face button, or **Play again** after a game ends.
-  The win/loss banner and autosolve feedback appear below the board, without
-  moving or covering its cells.
+  The win/loss banner, autosolve feedback and move advice appear below the
+  board, without moving or covering its cells.
 - **Winning** flags every remaining mine automatically, so the counter ends
   at 0.
 - A move that changes nothing is ignored and leaves the game's revision
@@ -182,7 +185,82 @@ Each automatic pass is one atomic batch in the C engine and increments the
 revision once if anything changes. The batch applies only the proofs of the
 latest result the engine validated for the current revision. Proofs computed
 for an old revision are rejected, and the page has no way to submit its own
-list of cells to play.
+list of cells to play. Autosolve never uses the move advice below.
+
+## Move advice
+
+With **Mine odds** on, once nothing certain is left to play, the page
+suggests a hidden cell to reveal next. There is no separate switch. Advice
+appears when the odds for the position on screen are shown, exact or
+estimated, and no proven-safe cell is left to open; with Autosolve on, that
+is when Autosolve pauses. There is no advice before the first reveal, after
+the game, while the odds are off, unavailable or still being calculated, or
+while proven moves remain. The odds always come first: the advice is
+calculated afterwards and never delays them or an autosolve batch.
+
+The suggested cell gets a dashed ring and a small target in its corner. Its
+odds stay visible underneath, and its label and tooltip say "best next move
+(exact)" or "suggested next move (estimate)". The line below the board
+explains the suggestion:
+
+- **Objective.** The advisor tries to maximize your chance of **winning the
+  whole game**, not of surviving the next reveal. The suggested cell is
+  therefore not always the one with the lowest risk: a slightly riskier cell
+  can reveal numbers that make later guesses safer or unnecessary.
+- **Mine risk** is the suggested cell's chance of hiding a mine, as the odds
+  overlay shows it, with the same exact or estimated label.
+- **Exact advice** (*Best next move (exact)*) comes from a complete search
+  over every layout that fits the clues, possible when there are few of them
+  (at most 256). The cell maximizes the number of those layouts won with the
+  best play that follows, and the chance to win is that exact fraction of
+  layouts, such as *105 of 256*. Only a search that completed within its
+  budget is labeled exact.
+- **Estimated advice** (*Suggested next move (estimate)*) is everything else.
+  It compares a few candidate cells by playing simulated games and is a
+  heuristic, never labeled best or optimal. The line reports how many of the
+  simulated games were won, such as *12 wins in 32 simulated games*, with
+  the share as an estimated chance to win and its standard error, a
+  sampling diagnostic, not a guaranteed confidence bound. Because the games
+  are a finite sample, the estimate can even exceed the cell's chance of
+  being safe, which no real chance to win can; the line then says so.
+  - If every simulated game was won, the line says so and gives no chance
+    to win: a sample never shows that winning is certain.
+  - When the advisor could list every possible layout but not finish the
+    exact search, it plays one game on each; the share is then exact for its
+    own strategy, but other play could still win more often.
+  - If a simulated game ran out of time, the line reports only how many of
+    the finished games were won and gives no overall chance to win: the cut
+    off game was likely a long one, so the finished games are not a fair
+    sample. Unfinished games are never counted as wins.
+- **No suggestion:** when the advisor finds a cell that is safe in every
+  layout, a guess is not needed. If the odds on screen did not prove that
+  cell (sampled odds can miss a proof that full counting finds),
+  **Recalculate odds** solves the position again in full, which can prove
+  it; autosolve then plays it if it is on, as it plays every proof. When the
+  advisor ran short of time or memory, or its simulated games gave too
+  little evidence (too few finished, or the move won none of them, which
+  does not make winning impossible), the line says why and offers
+  **Retry advice**. Such answers are never reused, so a retry calculates
+  anew. Nothing is retried automatically.
+
+The advice is **only shown, never played**. It cannot change the odds, the
+proofs, the engine's stored results or the game, and neither autosolve nor
+anything else clicks the suggested cell. It is not a guarantee: a suggested
+cell can hold a mine.
+
+**Flags are not evidence** for the advisor either, so it may suggest a cell
+you have flagged. The line then asks you to remove your flag first; the page
+never moves or removes your flag. Because flags do not change what the
+advisor knows, the suggestion comes back for the same position after a flag
+change, without a new calculation.
+
+**Lifecycle.** A reveal, chord, flag change, autosolve batch or new game,
+or turning Mine odds off, removes the marker immediately and cancels advice
+still being calculated. As with odds, a running calculation is stopped by
+terminating the worker. Moves never wait for the advisor, and the odds stay
+visible while it works. A failed calculation, such as a worker crash or a
+suggestion the game engine rejects, is reported below the board with
+**Retry advice**; the game and its odds are not affected.
 
 ## How the odds are computed
 
@@ -420,6 +498,72 @@ states. An 80 x 80 board with a simple frontier can be cheap to count exactly,
 while a smaller board with one tangled, interlocking frontier can exceed the
 budget.
 
+## How the move advice is computed
+
+The planner (`ms_plan` in `c/planner.c`) runs in the solver's worker and
+WebAssembly instance, after the odds and one request at a time. It receives
+the same copied public observation: board size, mine total and revealed
+numbers. It never sees flags, the hidden layout or the game's random
+generator, and it has no clairvoyance: every decision it simulates, at every
+step of every simulated game, uses only the public numbers of that simulated
+position.
+
+1. **Possible layouts.** `ms_posterior_generate` (`c/probability.c`, beside
+   the solver) produces complete mine layouts that fit the clues and the
+   mine total. Exactly counted components reuse the counting dynamic program;
+   hard components keep their importance weights and the global mine-count
+   conditioning. Layouts are drawn as whole boards in proportion to their
+   weight, never as independent per-cell coin flips from each cell's
+   probability: marginal probabilities alone lose how cells depend on each
+   other. In the worked example above, `a`, `b` and `c` are 2/7, 5/7 and
+   2/7, yet `a` and `c` are always mines together and never with `b`. When
+   there are at most 256 layouts, each is listed exactly once; otherwise
+   equal-weight draws stand in for them, and the result is never treated as
+   a complete list.
+2. **Certain moves first.** A hidden cell that is proven safe, or safe in
+   every layout of a complete list, means no guess is needed: the answer is
+   "no suggestion".
+3. **Exact search.** With a complete list, the planner searches the game:
+   each candidate reveal splits the layouts by the number that would appear
+   (or a mine), and every resulting position is played on with its best
+   continuation. The suggestion wins the largest number of layouts. Only a
+   completed search, within its node and time budgets, is reported as exact.
+4. **Guided rollouts.** Otherwise the planner shortlists a few candidate
+   cells and plays each to the end of the game on the same sampled layouts,
+   in paired rounds, so that candidates are compared on the same boards.
+   After the first reveal, a fixed continuation policy plays each simulated
+   game from its own simulated public observation. The planner reports the
+   share of completed rounds won and its standard error, a sampling
+   diagnostic, not a calibrated guarantee; the page shows the number of
+   wins and, only when every round completed and neither none nor all were
+   won, that share as the estimated chance to win. Rounds cut short by the
+   step or time limit count as unfinished, never as wins. Too few completed
+   rounds, or none won by the advised cell, give no suggestion.
+
+The defaults are the `MS_PLAN_DEFAULT_*` constants in `c/planner.h`, passed
+as an `ms_plan_limits` record:
+
+| Budget | Default |
+| --- | ---: |
+| Time per suggestion, shared by all stages | 3 seconds |
+| Layouts for an exact search | 256 |
+| Exact search positions | 100,000 |
+| Sampled layouts, one rollout round each | 96 |
+| Candidate cells compared by rollouts | 8 |
+| Completed rounds required for an estimate | 16 |
+| Planner workspace memory | 256 MiB |
+
+Running out of a budget is never an error: the answer degrades from exact
+to estimated to no suggestion, with the reason.
+
+**Limits.** An estimated suggestion measures the planner's own continuation
+policy on sampled layouts, so it can differ from the truly best move, and
+its win chance is an estimate of how that policy fares, not of perfect play.
+An exact suggestion is exact for the model above: all layouts that fit the
+clues are equally likely. Neither is a guarantee for the real board. How
+often the advice finds the best move, and how quickly, has not been
+measured beyond these budgets.
+
 ## How the engine runs
 
 All game and solver algorithms are C code in `c/`, compiled with Clang for
@@ -434,7 +578,7 @@ single-threaded instances of it:
 | Instance | Where it runs | What it does |
 | --- | --- | --- |
 | Game | The main thread (`static/engine-client.js`), in small synchronous calls | Holds the only copy of the game: rules, mine placement, flood fill, chording, flags, the timer, the public view, observations for the solver, the per-revision odds cache and atomic autosolve batches. |
-| Solver | A dedicated module worker (`static/probability-worker.js`) | Runs `ms_solve` on a copied public observation. It never sees flags, the hidden layout, the game's seed or the game's memory, and keeps no state between requests. |
+| Solver | A dedicated module worker (`static/probability-worker.js`) | Runs `ms_solve`, and `ms_plan` for move advice, on a copied public observation, one request at a time. It never sees flags, the hidden layout, the game's seed or the game's memory, and keeps no state between requests. |
 
 - **Responsiveness:** the main thread never runs the solver, so the page keeps
   responding while odds are calculated.
@@ -442,18 +586,22 @@ single-threaded instances of it:
   obsolete calculation is cancelled by terminating the worker. The next
   request starts a new worker from the cached compiled module. A 60-second
   watchdog reports a hung worker as an error.
-- **Routing:** every solve request carries the game's generation, revision
-  and a request id. Answers that do not match the current request are
-  ignored.
+- **Routing:** every solve or plan request carries the game's generation,
+  revision and a request id. Answers that do not match the current request
+  are ignored.
+- **Odds first:** a plan is sent only when no solve is pending, and an odds
+  request stops a running plan. There is no third instance or thread: odds
+  and advice share the worker, one after the other.
 - **Randomness and time:** each new game gets a 64-bit seed from
   `crypto.getRandomValues`. The C engine places the mines with its own
   xoshiro256\*\* generator, so the same seed and moves give the same game on
   every platform. Besides corec's system interface, the module imports one
   function from the page: a monotonic millisecond clock (`performance.now`)
   for the game timer and the solver's time budget.
-- **Failures:** an instance that traps is discarded. A trap in the solver
-  fails only that odds request, and the worker is replaced. A trap in the game
-  instance ends the current game; a new game starts a fresh instance.
+- **Failures:** an instance that traps is discarded. A trap in the solver or
+  planner fails only that odds or advice request, and the worker is
+  replaced. A trap in the game instance ends the current game; a new game
+  starts a fresh instance.
 
 **Freestanding C.** The C sources include only corec headers, never system
 headers. They use no C library, no compiler runtime library and no 128-bit
@@ -468,7 +616,12 @@ may import only corec's system interface functions and the clock. On Windows,
 MSVC-compatible compilers call `memset` and `memcpy` to initialize and copy
 some local structures and arrays; `c/compiler_mem.c` forwards exactly those
 two to corec's `base_memset` and `base_memcpy`, in the Windows test build
-only.
+only. The pinned Windows platform has a no-op `__chkstk`, so the native test
+executable reserves and commits its fixed 1 MiB stack up front rather than
+relying on stack probes to grow it. The build audits both sizes in the
+executable headers. This prevents large stack frames from skipping the
+stack-growth guard page without adding a C runtime or increasing the stack
+limit.
 
 ## Engine ABI
 
@@ -495,12 +648,14 @@ public observation, never the hidden layout.
   as `invalid_buffer` before any memory is touched. Calls that can grow memory
   detach old `ArrayBuffer` views, so the page re-reads memory after each call.
   Each instance has fixed budgets: 32 MiB of buffers, 8 MiB for the game and
-  its stored result, and at most 256 MiB of solver workspace, all of which is
-  released after every solve.
+  its stored result, and at most 256 MiB of solver and planner workspace, all
+  of which is released after every solve or plan.
 - **Game instance:** `ms_new_game` (returns the new game's generation),
   `ms_act` (reveal, flag or chord), `ms_get_view`, `ms_get_observation`,
-  `ms_get_cached_result`, `ms_accept_result` and `ms_apply_autosolve`.
-- **Solver instance:** `ms_init_default_limits` and `ms_solve_observation`.
+  `ms_get_cached_result`, `ms_accept_result`, `ms_apply_autosolve` and
+  `ms_check_plan`.
+- **Solver instance:** `ms_init_default_limits` and `ms_solve_observation`
+  for odds, `ms_init_plan_limits` and `ms_plan_observation` for advice.
 - **Both instances:** `ms_abi_version`, `ms_init`, `ms_alloc`, `ms_free`, the
   size functions, `ms_status_text`, `ms_reason_text` and `ms_live_bytes`.
 
@@ -547,6 +702,37 @@ storing it. Any revision change or new game drops the stored result. An
 usable: `ms_apply_autosolve` plays the proven safe cells and mines of the
 latest accepted result for the current revision as one atomic batch, and
 reports when no result is stored yet so that the page calculates odds first.
+
+**Move advice** is rebuilt from the plan buffer (`ms_plan_result`,
+112 bytes, `c/planner.h`): `{game_id, generation, revision, status, reason,
+cell, row, col, survival_probability, win_probability, standard_error,
+candidates, layouts, trials, incomplete, rollout_wins, search_nodes,
+posterior_exact, elapsed_ms, exact_wins, exact_total, observation_hash}`.
+
+- `status` is `exact`, `estimated`, `unavailable` or `none`; only `exact` and
+  `estimated` name a hidden `cell` (with `row` and `col`) and carry the
+  probabilities. `reason` (`certain_moves`, `finished`, `not_started`,
+  `no_samples`, `budget`, `insufficient_rollouts`, `posterior_unavailable`
+  or `null`) says why there is no suggestion.
+- `exact_wins` of `exact_total` layouts are won by an exact suggestion
+  (`null` otherwise). `trials` rollout rounds were started per candidate and
+  `incomplete` of them did not finish; an estimate won `rollout_wins` of the
+  finished rounds (`null` otherwise), and its `win_probability` is exactly
+  that share.
+- The advice buffers were added without changing the ABI version: their
+  headers carry their own magic numbers and the planner version
+  (`MS_PLANNER_VERSION`, currently 1), and the page refuses others. The plan
+  limits (64 bytes) and the plan (112 bytes) have fixed sizes, checked with
+  the usual ownership, alignment and no-overlap rules before the planner
+  touches any buffer.
+- The page decodes a plan strictly (header, codes, finite probabilities in
+  0..1, a hidden cell) and then asks the game instance: `ms_check_plan`
+  validates it against a freshly built observation of the current revision,
+  including its observation hash. Only then is it shown. It stores nothing:
+  a plan never reaches the odds cache, autosolve or the game. A plan that
+  passed this check is reused for later revisions only while `ms_check_plan`
+  still accepts it, that is while the observation is unchanged (flag
+  changes).
 
 **Status codes.** Operations that return a status use these codes, each with
 a stable snake_case name (`ms_status_text`). Exports that return a pointer or
@@ -605,7 +791,8 @@ Chromium (desktop and a Pixel 7 phone profile), with Firefox and WebKit smoke
 tests, against `dist/` served both at the site root and under a nested path.
 
 The C tests are grouped into the suites `runtime`, `bigint`, `game`,
-`probability`, `autosolve` and `api`. Without arguments every suite runs; a
+`probability`, `posterior` (complete-layout generation), `planner` (move
+advice), `autosolve` and `api`. Without arguments every suite runs; a
 subset compiles only the sources it needs, for example
 `pixi run --locked -e js test-node --suite probability`. A full run needs
 every suite and never skips one. `check-wasm` audits the imports and exports
@@ -687,11 +874,12 @@ requires approval, the deployment will wait for it.
 | `c/runtime.h`, `c/runtime.c` | Shared C runtime: fallible, budgeted allocation over corec's buddy allocator, the seeded random generator, hashing, the injected clock, grid neighbors and buffer helpers. |
 | `c/bigint.h`, `c/bigint.c` | Exact multiprecision integers: counting, polynomial division and correctly rounded ratios. |
 | `c/game.h`, `c/game.c` | Game rules: first-reveal-safe mine placement, flood fill, chording, flags, win/loss, revisions, the timer, the public view and observations. |
-| `c/probability.c` | The mine-probability solver described above (`ms_solve`). |
+| `c/probability.c`, `c/posterior.h` | The mine-probability solver described above (`ms_solve`) and the complete-layout generation the advisor uses (`ms_posterior_generate`). |
+| `c/planner.h`, `c/planner.c` | The move advisor (`ms_plan`): exact endgame search and guided rollouts. |
 | `c/engine.h`, `c/engine.c` | The shared contract (status codes, limits, buffer layouts) and the per-tab engine: current game, validated odds cache, atomic autosolve. |
 | `c/wasm_api.h`, `c/wasm_api.c`, `c/wasm_buffers.h` | The WebAssembly exports and the checks on page-supplied buffers. |
 | `c/compiler_mem.c` | Windows-only `memset`/`memcpy` forwarding to corec (see above). |
-| `static/` | The site: `index.html`, `styles.css`, `app.js` (the interface), `engine-client.js` (game instance and solver worker), `wasm-host.js` (marshalling; loads corec's `wasi.js`), `probability-worker.js` (solver instance). Plain JavaScript modules and inline SVG icons; no bundler. |
+| `static/` | The site: `index.html`, `styles.css`, `app.js` (the interface), `engine-client.js` (game instance and solver worker), `wasm-host.js` (marshalling; loads corec's `wasi.js`), `probability-worker.js` (solver and planner instance). Plain JavaScript modules and inline SVG icons; no bundler. |
 | `scripts/` | `build.mjs` builds and audits the C test programs, the WebAssembly module and `dist/`; `check-wasm.mjs` runs the WebAssembly checks; `serve.mjs` is the static file server. |
 | `tests/c/` | The C test runner (`main.c`), one file per suite, reference fixtures in `fixtures/` (frozen from the former Python implementation), and a test-only WebAssembly module. |
 | `tests/js/` | Node.js tests of the JavaScript adapter and the real engine, and the Playwright browser tests. |

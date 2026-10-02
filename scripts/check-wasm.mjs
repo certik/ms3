@@ -20,10 +20,13 @@
 //      and proc_exit propagation;
 //   4. without --suite (or with --suite all) builds the production reactor
 //      build/wasm/minesweeper.wasm, audits it against the exports declared
-//      in c/wasm_api.{h,c}, and instantiates it: ms_abi_version() before
-//      ms_init(), ms_init() exactly once. It fails, listing the missing
-//      files, until every engine source exists. A --suite subset run says
-//      explicitly that it did not check the production reactor.
+//      in c/wasm_api.{h,c} (the move advisor's included), and instantiates
+//      it: ms_abi_version() before ms_init(), ms_init() exactly once, and
+//      the advisor's exports refusing bad buffers before touching them,
+//      planning a tiny position and releasing their workspace. It fails,
+//      listing the missing files, until every engine source exists. A
+//      --suite subset run says explicitly that it did not check the
+//      production reactor.
 //
 // The smoke reactor, link/policy probes and site fixtures are built in a
 // private scratch directory, build/check-wasm-XXXXXX/, removed afterwards, so
@@ -33,9 +36,9 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { basename, dirname, join, relative } from 'node:path';
 import { makeWasi, ProcExit } from '../third_party/corec/platform/js/wasi.js';
 import {
-  BuildError, COREC_WASM_EXPORTS, HOST_IMPORTS, REACTOR_FILE, ROOT, STATIC_FILES, VENDOR_FILES,
+  BuildError, COREC_WASM_EXPORTS, HOST_IMPORTS, PLANNER_EXPORTS, REACTOR_FILE, ROOT, STATIC_FILES, VENDOR_FILES,
   abiVersion, auditWasmModule, buildReactor, buildSmoke, buildWasm, checkMemoryAdapters,
-  checkSiteReferences, checkSourcePolicy, checkWindowsImports, parseCoffSymbols, parseDumpbinImports,
+  checkSiteReferences, checkSourcePolicy, checkWindowsImports, checkWindowsStack, parseCoffSymbols, parseDumpbinImports,
   parseExportDeclarations, parseSuites, tryLinkWasm, verifyDist,
 } from './build.mjs';
 
@@ -49,6 +52,7 @@ const MS_ERR_INVALID_OBSERVATION = 8;
 const MS_ERR_INVALID_LIMITS = 9;
 const MS_ERR_INVALID_RESULT = 10;
 const MS_ERR_INVALID_BUFFER = 11;
+const MS_ERR_STALE_REVISION = 32;
 const MS_ERR_INTERNAL = 65;
 
 let checks = 0;
@@ -132,7 +136,7 @@ function sourcePolicyProbes(scratch) {
 // The Windows audits (scripts/build.mjs) read dumpbin output, so they are
 // probed here on every platform: the forwarding adapters pass, while
 // recursion (an optimized base_memset calling memset), unreadable output and
-// a memory helper imported from a DLL are rejected.
+// a memory helper imported from a DLL and a stack relying on probes are rejected.
 function windowsAuditProbes() {
   const coff = (symbols) => ['', 'Dump of file build\\native\\obj\\x.obj', '', 'File Type: COFF OBJECT',
     '', 'COFF SYMBOL TABLE', '000 01047A8F ABS    notype       Static       | @comp.id',
@@ -167,8 +171,21 @@ function windowsAuditProbes() {
     'imports memory helper(s) memset', 'memset imported from a DLL');
   rejects(() => checkWindowsImports([], 'ms_tests.exe'), 'cannot read the imports',
     'unreadable dumpbin /imports output');
+  const headers = (reserve, commit) => ['OPTIONAL HEADER VALUES',
+    `          ${reserve} size of stack reserve`, `          ${commit} size of stack commit`, ''].join('\r\n');
+  checkWindowsStack(headers('100000', '100000'), 'ms_tests.exe');
+  check(true, 'the fixed 1 MiB Windows stack is fully committed');
+  for (const [listing, what] of [
+    [headers('100000', '1000'), 'the default 4 KiB commit with no stack probes'],
+    [headers('200000', '100000'), 'a reservation larger than the committed stack'],
+    [headers('200000', '200000'), 'a stack larger than the fixed budget'],
+    ['100000 size of stack reserve', 'a missing stack commit'],
+    ['', 'unreadable dumpbin /headers output'],
+  ]) {
+    rejects(() => checkWindowsStack(listing, 'ms_tests.exe'), 'must reserve and commit', what);
+  }
   console.log('windows audits: forwarding adapters accepted; recursion, DLL memory helpers and ' +
-    'unreadable dumpbin output rejected');
+    'uncommitted stacks or unreadable dumpbin output rejected');
 }
 
 // The production export list comes from export_name markers in
@@ -503,7 +520,67 @@ async function productionSmoke(path) {
   same(x.ms_init(), MS_OK, 'production ms_init()');
   same(x.ms_init(), MS_ERR_INTERNAL, 'production second ms_init() is refused');
   same(x.ms_abi_version(), version, 'production ms_abi_version() after ms_init()');
-  console.log(`production reactor: ${path} instantiated; ABI version ${version}, one-time ms_init`);
+  plannerSmoke(x);
+  console.log(`production reactor: ${path} instantiated; ABI version ${version}, one-time ms_init, ` +
+    `advisor exports ${PLANNER_EXPORTS.join(', ')}`);
+}
+
+// The move advisor's exports (wasm_api.h): fixed-size default limits, every
+// buffer refused before a byte is touched (aliasing, length, wild
+// pointers), a canonical plan for a tiny observation, a workspace released
+// after every call, and a game-instance check that never accepts a plan
+// without a current game.
+function plannerSmoke(x) {
+  const memory = x.memory;
+  const dv = () => new DataView(memory.buffer);
+  const buffer = (size) => {
+    const ptr = x.ms_alloc(size) >>> 0;
+    check(ptr !== 0 && ptr % 16 === 0, `production buffer of ${size} bytes`);
+    return ptr;
+  };
+  const limits = buffer(64);
+  same(x.ms_init_plan_limits(limits, 56), MS_ERR_INVALID_BUFFER, 'plan limits need exactly 64 bytes');
+  same(x.ms_init_plan_limits(limits + 8, 56), MS_ERR_INVALID_BUFFER, 'interior plan limits');
+  same(x.ms_init_plan_limits(limits, 64), MS_OK, 'default plan limits');
+  same(dv().getUint32(limits, true), 0x4D530005, 'plan limits magic');
+  same(dv().getUint32(limits + 4, true), 1, 'planner version');
+  const budget = dv().getFloat64(limits + 32, true);
+  check(Number.isFinite(budget) && budget > 0, `finite default plan time budget (${budget})`);
+
+  // Python's (4, 1, 1, {0: 1, 3: 0}), as in abiMarshalling.
+  const obs = buffer(40);
+  [0x4D530002, 1, 4, 1, 1, 2, 0, 0].forEach((v, i) => dv().setUint32(obs + 4 * i, v, true));
+  new Uint8Array(memory.buffer, obs + 32, 4).set([1, 0xFF, 0xFF, 0]);
+  const plan = buffer(112);
+  new Uint8Array(memory.buffer, plan, 112).fill(0xA5);
+  const bytes = () => Array.from(new Uint8Array(memory.buffer, obs, 40)).join() +
+    Array.from(new Uint8Array(memory.buffer, limits, 64)).join() +
+    Array.from(new Uint8Array(memory.buffer, plan, 112)).join();
+  const before = bytes();
+  const refused = [
+    [obs, 40, limits, 64, obs, 112, 'a plan over its own observation'],
+    [obs, 40, limits, 64, limits, 112, 'a plan over its limits'],
+    [obs, 40, obs, 64, plan, 112, 'limits over the observation'],
+    [obs, 40, limits, 56, plan, 112, 'solver-sized limits'],
+    [obs, 40, limits, 64, plan, 120, 'a result-sized plan'],
+    [obs, 40, limits, 64, plan + 8, 112, 'an interior plan crossing its buffer'],
+    [obs, 40, limits, 64, 0xFFFFFFF0, 112, 'a wild plan pointer'],
+    [1, 40, limits, 64, plan, 112, 'a wild observation pointer'],
+  ];
+  for (const [o, ol, l, ll, r, rl, what] of refused) {
+    same(x.ms_plan_observation(o, ol, l, ll, r, rl), MS_ERR_INVALID_BUFFER, `${what} is refused`);
+  }
+  same(bytes(), before, 'refused plans change no buffer');
+  same(x.ms_live_bytes(2), 0, 'refused plans hold no workspace');
+  same(x.ms_plan_observation(obs, 40, limits, 64, plan, 112), MS_OK, 'a plan for a tiny position');
+  same(dv().getUint32(plan, true), 0x4D530006, 'plan magic');
+  same(dv().getUint32(plan + 4, true), 1, 'plan version');
+  check(dv().getUint32(plan + 8, true) <= 3, 'plan status none/exact/estimated/unavailable');
+  same(x.ms_live_bytes(2), 0, 'the planner releases its workspace');
+  same(x.ms_check_plan(1, 0, plan, 104), MS_ERR_INVALID_BUFFER, 'ms_check_plan needs a 112-byte plan');
+  same(x.ms_check_plan(1, 0, plan, 112), MS_ERR_STALE_REVISION, 'without a game no plan is current');
+  for (const ptr of [obs, limits, plan]) same(x.ms_free(ptr), MS_OK, 'free advisor smoke buffer');
+  same(x.ms_live_bytes(0), 0, 'every advisor smoke buffer was freed');
 }
 
 // ---------------------------------------------------------------- main

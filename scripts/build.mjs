@@ -17,7 +17,8 @@
 //                 dist/, then checks that dist/ holds exactly the registered
 //                 release files (STATIC_FILES) and every site reference
 //
-// Suites: runtime, bigint, game, probability, autosolve, api (default: all).
+// Suites: runtime, bigint, game, probability, posterior, planner, autosolve,
+// api (default: all).
 // A suite is compiled in together with exactly the sources listed in SUITES,
 // so a subset builds while other modules are unfinished. The default (all
 // suites), the production reactor and dist need every source and fail with
@@ -83,6 +84,17 @@ export const SUITES = {
     test: 'tests/c/test_probability.c',
     sources: ['c/runtime.c', 'c/bigint.c', 'c/probability.c'],
   },
+  // Complete-layout posterior generation (ms_posterior_generate, c/posterior.h),
+  // which reuses the solver's counting and sampling in c/probability.c.
+  posterior: {
+    test: 'tests/c/test_posterior.c',
+    sources: ['c/runtime.c', 'c/bigint.c', 'c/probability.c'],
+  },
+  // Move advisor (ms_plan, c/planner.h) over posterior layouts.
+  planner: {
+    test: 'tests/c/test_planner.c',
+    sources: ['c/runtime.c', 'c/bigint.c', 'c/probability.c', 'c/planner.c'],
+  },
   // Integration: real solver results feeding atomic autosolve batches.
   autosolve: {
     test: 'tests/c/test_autosolve.c',
@@ -98,7 +110,7 @@ const RUNNER = 'tests/c/main.c';
 const SMOKE_SOURCE = 'tests/c/reactor_smoke.c';
 // The production reactor compiles every c/*.c file; all of these must exist.
 export const ENGINE_SOURCES = ['c/runtime.c', 'c/bigint.c', 'c/game.c', 'c/probability.c',
-  'c/engine.c', 'c/wasm_api.c'];
+  'c/planner.c', 'c/engine.c', 'c/wasm_api.c'];
 // memset/memcpy forwarding to corec's base_mem*, linked only into the Windows
 // native build (see the file): the one project file that may define them, and
 // never part of the reactor.
@@ -142,6 +154,9 @@ const WASM_REACTOR_LINK = [...WASM_LINK_COMMON];
 
 // The application host boundary (engine.h, "Reactor ABI rules").
 export const HOST_IMPORTS = new Set(['ms_host.now_ms']);
+// The move advisor's additive exports (wasm_api.h): the production reactor
+// must declare each of them, like engine.h's ms_abi_version and ms_init.
+export const PLANNER_EXPORTS = ['ms_init_plan_limits', 'ms_plan_observation', 'ms_check_plan'];
 // Exported by corec's platform_wasm.c itself; JS never uses them.
 export const COREC_WASM_EXPORTS = ['wasm_buddy_alloc', 'wasm_buddy_free'];
 
@@ -158,6 +173,9 @@ const MEMORY_HELPER_ADVICE =
 const MACOS_STACK_PROTECTOR = ['___stack_chk_fail', '___stack_chk_guard'];
 // Windows: corec links /nodefaultlib against these import libraries only.
 const WINDOWS_DLLS = ['kernel32.dll', 'shell32.dll'];
+// corec's freestanding __chkstk is a no-op. Commit the fixed stack up front
+// so a frame larger than a page cannot skip Windows' stack-growth guard.
+export const WINDOWS_STACK_BYTES = 1 << 20;
 
 export class BuildError extends Error {}
 
@@ -522,9 +540,24 @@ function auditWindowsBinary(binary) {
   const imports = parseDumpbinImports(runChecked(dumpbin, ['/nologo', '/imports', binary],
     { capture: true, quiet: true }).stdout);
   checkWindowsImports(imports, rel(binary));
+  checkWindowsStack(runChecked(dumpbin, ['/nologo', '/headers', binary],
+    { capture: true, quiet: true }).stdout, rel(binary));
   console.log(`audit: ${rel(binary)} depends only on ${dlls.join(', ')} (no CRT); none of its ` +
     `${imports.length} imports is a memory helper (${COMPILER_MEM_HELPERS.join('/')}: ` +
-    `${COMPILER_MEM_SOURCE})`);
+    `${COMPILER_MEM_SOURCE}); its ${WINDOWS_STACK_BYTES}-byte stack is fully committed`);
+}
+
+export function checkWindowsStack(listing, binary) {
+  const size = (kind) => {
+    const match = new RegExp(`^\\s*([0-9a-f]+)\\s+size of stack ${kind}\\s*$`, 'im').exec(listing);
+    return match ? Number.parseInt(match[1], 16) : null;
+  };
+  const reserve = size('reserve');
+  const commit = size('commit');
+  if (reserve !== WINDOWS_STACK_BYTES || commit !== WINDOWS_STACK_BYTES) {
+    fail(`${binary} must reserve and commit ${WINDOWS_STACK_BYTES} stack bytes ` +
+      `(dumpbin: reserve=${reserve}, commit=${commit}); corec's freestanding __chkstk does not probe pages`);
+  }
 }
 
 function isMemoryHelper(symbol) {
@@ -618,6 +651,7 @@ function buildNativeMsvc(suites, platform) {
   auditWindowsAdapters(objectPath(objDir, COMPILER_MEM_SOURCE, '.obj'),
     objectPath(objDir, `${COREC}/base/mem.c`, '.obj'));
   link(msvcTool('link'), ['/nologo', '/subsystem:console', '/nodefaultlib', '/entry:_start',
+    `/stack:${WINDOWS_STACK_BYTES},${WINDOWS_STACK_BYTES}`,
     'kernel32.lib', 'shell32.lib', ...objects.map(rel), `/out:${rel(out)}`]);
   auditWindowsBinary(out);
   return out;
@@ -753,6 +787,9 @@ export function productionExports() {
   const parsed = parseExportDeclarations(readFileSync(join(ROOT, WASM_API_HEADER), 'utf8'),
     readFileSync(join(ROOT, WASM_API_SOURCE), 'utf8'));
   problems.push(...parsed.problems);
+  for (const name of PLANNER_EXPORTS) {
+    if (!parsed.names.includes(name)) problems.push(`required export ${name} (move advisor) is not declared`);
+  }
   if (problems.length) fail(`reactor export declarations:\n  ${problems.join('\n  ')}`);
   return parsed.names;
 }
@@ -1045,6 +1082,12 @@ function runnerArgs(selection) {
 function execute(command, args) {
   const result = run(command, args);
   if (result.signal) fail(`${shown(command)} terminated by ${result.signal}`);
+  if (result.status !== 0) {
+    const status = process.platform === 'win32'
+      ? `${result.status} (0x${(result.status >>> 0).toString(16).padStart(8, '0')})`
+      : String(result.status);
+    console.error(`build.mjs: ${shown(command)} failed with exit code ${status}`);
+  }
   return result.status;
 }
 

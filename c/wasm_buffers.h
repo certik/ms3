@@ -122,15 +122,13 @@ static inline ms_status ms_host_span2(const ms_host_table *table, uintptr_t a, s
     return MS_OK;
 }
 
-/* The solver request: observation, limits and result each valid, 8-byte
- * aligned and pairwise disjoint (limits_len must be MS_WASM_LIMITS_BYTES),
- * else MS_ERR_INVALID_BUFFER with the outputs untouched - checked before
- * the solver initializes its result. */
-static inline ms_status ms_host_solve_spans(const ms_host_table *table, uintptr_t obs,
-                                            size_t obs_len, uintptr_t limits, size_t limits_len,
-                                            uintptr_t result, size_t result_len, void **obs_out,
-                                            void **limits_out, void **result_out) {
-    if (limits_len != MS_WASM_LIMITS_BYTES) return MS_ERR_INVALID_BUFFER;
+/* An observation, limits and result triple: each valid and 8-byte aligned,
+ * the three pairwise disjoint, else MS_ERR_INVALID_BUFFER with the outputs
+ * untouched. */
+static inline ms_status ms_host_spans3(const ms_host_table *table, uintptr_t obs, size_t obs_len,
+                                       uintptr_t limits, size_t limits_len, uintptr_t result,
+                                       size_t result_len, void **obs_out, void **limits_out,
+                                       void **result_out) {
     void *o = ms_host_span(table, obs, obs_len, 8);
     void *l = ms_host_span(table, limits, limits_len, 8);
     void *r = ms_host_span(table, result, result_len, 8);
@@ -143,4 +141,32 @@ static inline ms_status ms_host_solve_spans(const ms_host_table *table, uintptr_
     *limits_out = l;
     *result_out = r;
     return MS_OK;
+}
+
+/* The solver request: observation, limits and result each valid, 8-byte
+ * aligned and pairwise disjoint (limits_len must be MS_WASM_LIMITS_BYTES),
+ * else MS_ERR_INVALID_BUFFER with the outputs untouched - checked before
+ * the solver initializes its result. */
+static inline ms_status ms_host_solve_spans(const ms_host_table *table, uintptr_t obs,
+                                            size_t obs_len, uintptr_t limits, size_t limits_len,
+                                            uintptr_t result, size_t result_len, void **obs_out,
+                                            void **limits_out, void **result_out) {
+    if (limits_len != MS_WASM_LIMITS_BYTES) return MS_ERR_INVALID_BUFFER;
+    return ms_host_spans3(table, obs, obs_len, limits, limits_len, result, result_len, obs_out,
+                          limits_out, result_out);
+}
+
+/* The planner request: as the solver request, with the fixed planner sizes
+ * (limits_len MS_WASM_PLAN_LIMITS_BYTES, result_len
+ * MS_WASM_PLAN_RESULT_BYTES) - checked before the planner touches any of
+ * the three buffers. */
+static inline ms_status ms_host_plan_spans(const ms_host_table *table, uintptr_t obs,
+                                           size_t obs_len, uintptr_t limits, size_t limits_len,
+                                           uintptr_t result, size_t result_len, void **obs_out,
+                                           void **limits_out, void **result_out) {
+    if (limits_len != MS_WASM_PLAN_LIMITS_BYTES || result_len != MS_WASM_PLAN_RESULT_BYTES) {
+        return MS_ERR_INVALID_BUFFER;
+    }
+    return ms_host_spans3(table, obs, obs_len, limits, limits_len, result, result_len, obs_out,
+                          limits_out, result_out);
 }

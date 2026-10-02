@@ -9,8 +9,10 @@
  * codes and enums are the ones in engine.h (offsets are restated below and
  * checked at compile time). The same .wasm file is instantiated twice per
  * tab: the GAME instance on the main thread (ms_new_game ... ms_apply_
- * autosolve) and the SOLVER instance in a dedicated worker
- * (ms_solve_observation only). The engine never runs the solver itself.
+ * autosolve, ms_check_plan) and the SOLVER instance in a dedicated worker
+ * (ms_solve_observation and the move advisor's ms_plan_observation, one
+ * request at a time). The engine never runs the solver or the planner
+ * itself.
  *
  * Instantiation
  * -------------
@@ -109,9 +111,29 @@
  *   result, result_len). Its workspace (at most MS_WASM_SOLVER_BUDGET) is
  *   fully released after every call; ms_live_bytes(MS_WASM_POOL_SOLVER) is
  *   0 between calls. To cancel a running solve, terminate the worker.
+ *
+ * Move advisor (planner.h; additive, the ABI version stays 1)
+ * -----------------------------------------------------------
+ *   solver instance: ms_init_plan_limits(plan_limits,
+ *               MS_WASM_PLAN_LIMITS_BYTES) once, then per request
+ *               ms_plan_observation(obs, obs_len, plan_limits,
+ *               MS_WASM_PLAN_LIMITS_BYTES, plan, MS_WASM_PLAN_RESULT_BYTES)
+ *               on the same copied public observation the odds use. It
+ *               shares the solver workspace (released after every call,
+ *               successful or not) and runs only between solves: the page
+ *               finishes the odds first, and cancels a plan by terminating
+ *               the worker like a solve.
+ *   game instance: ms_check_plan(generation, revision, plan,
+ *               MS_WASM_PLAN_RESULT_BYTES) binds the worker's plan to the
+ *               current position: ms_plan_result_validate against a freshly
+ *               built observation of that revision (observation_hash,
+ *               dimensions, a hidden recommended cell). It stores nothing
+ *               and never reaches the odds cache, autosolve or the game:
+ *               advice is shown, never played.
  */
 
 #include "engine.h"
+#include "planner.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -131,9 +153,11 @@ extern "C" {
 /* ms_live_bytes pools */
 #define MS_WASM_POOL_BUFFERS 0u /* ms_alloc buffers (budget accounting) */
 #define MS_WASM_POOL_ENGINE 1u  /* current game, stored result, scratch */
-#define MS_WASM_POOL_SOLVER 2u  /* solver workspace; 0 between calls */
+#define MS_WASM_POOL_SOLVER 2u  /* solver/planner workspace; 0 between calls */
 
-#define MS_WASM_LIMITS_BYTES 56u /* sizeof(ms_infer_limits) */
+#define MS_WASM_LIMITS_BYTES 56u       /* sizeof(ms_infer_limits) */
+#define MS_WASM_PLAN_LIMITS_BYTES 64u  /* sizeof(ms_plan_limits) */
+#define MS_WASM_PLAN_RESULT_BYTES 112u /* sizeof(ms_plan_result) */
 
 /* ------------------------------------------------------------------------
  * Layout reference for the adapter (little-endian, byte offsets)
@@ -163,7 +187,23 @@ extern "C" {
  *   96 has_effective_sample_size, 100 reserved, 104 elapsed_ms (f64),
  *   112 effective_sample_size (f64).
  *   flag byte: 0x01 value present, 0x02 proven safe, 0x04 proven mine.
- * Buffer sizes: ms_view_bytes / ms_obs_bytes / ms_result_bytes below.
+ * plan limits (ms_plan_limits, 64 bytes, planner.h):
+ *   0 magic 0x4D530005, 4 version (MS_PLANNER_VERSION), 8
+ *   exact_layout_limit, 12 exact_node_limit, 16 sample_count, 20
+ *   candidate_limit, 24 rollout_step_limit, 28 flags, 32 time_budget_ms
+ *   (f64), 40 memory_budget_bytes (u64), 48 seed (u64), 56 min_rollouts,
+ *   60 reserved.
+ * plan (ms_plan_result, 112 bytes, planner.h):
+ *   0 magic 0x4D530006, 4 version (MS_PLANNER_VERSION), 8 status (0 none,
+ *   1 exact, 2 estimated, 3 unavailable), 12 reason, 16 width, 20 height,
+ *   24 total_mines, 28 revealed, 32 observation_hash (u64), 40 cell
+ *   (0xFFFFFFFF unless exact/estimated), 44 candidates, 48 layouts,
+ *   52 trials, 56 incomplete, 60 search_nodes, 64 posterior_exact,
+ *   68 reserved, 72 survival_probability (f64), 80 win_probability (f64),
+ *   88 standard_error (f64), 96 elapsed_ms (f64), 104 exact_wins,
+ *   108 exact_total.
+ * Buffer sizes: ms_view_bytes / ms_obs_bytes / ms_result_bytes below; the
+ * plan buffers have the fixed sizes MS_WASM_PLAN_*_BYTES.
  * ------------------------------------------------------------------------ */
 _Static_assert(MS_OFFSETOF(ms_view_header, generation) == 8, "view layout");
 _Static_assert(MS_OFFSETOF(ms_view_header, status) == 16, "view layout");
@@ -176,6 +216,14 @@ _Static_assert(MS_OFFSETOF(ms_result_header, nodes) == 68, "result layout");
 _Static_assert(MS_OFFSETOF(ms_result_header, proven_safe) == 88, "result layout");
 _Static_assert(MS_OFFSETOF(ms_result_header, has_effective_sample_size) == 96, "result layout");
 _Static_assert(MS_OFFSETOF(ms_result_header, effective_sample_size) == 112, "result layout");
+_Static_assert(sizeof(ms_plan_limits) == MS_WASM_PLAN_LIMITS_BYTES, "plan limits layout");
+_Static_assert(MS_OFFSETOF(ms_plan_limits, seed) == 48, "plan limits layout");
+_Static_assert(MS_OFFSETOF(ms_plan_limits, min_rollouts) == 56, "plan limits layout");
+_Static_assert(sizeof(ms_plan_result) == MS_WASM_PLAN_RESULT_BYTES, "plan layout");
+_Static_assert(MS_OFFSETOF(ms_plan_result, cell) == 40, "plan layout");
+_Static_assert(MS_OFFSETOF(ms_plan_result, posterior_exact) == 64, "plan layout");
+_Static_assert(MS_OFFSETOF(ms_plan_result, elapsed_ms) == 96, "plan layout");
+_Static_assert(MS_OFFSETOF(ms_plan_result, exact_total) == 108, "plan layout");
 
 #if defined(__wasm__)
 #define MS_WASM_EXPORT(name) __attribute__((export_name(#name))) name
@@ -337,6 +385,45 @@ int32_t MS_WASM_EXPORT(ms_init_default_limits)(uint32_t limits, uint32_t limits_
 int32_t MS_WASM_EXPORT(ms_solve_observation)(uint32_t obs, uint32_t obs_len, uint32_t limits,
                                              uint32_t limits_len, uint32_t result,
                                              uint32_t result_len);
+
+/* ------------------------------------------------------------------------
+ * Move advisor (planner.h): solver instance, plus one game-instance check
+ * ------------------------------------------------------------------------ */
+
+/* Writes the default planner limits (ms_plan_limits_default) into
+ * `limits`; limits_len must be MS_WASM_PLAN_LIMITS_BYTES (else
+ * MS_ERR_INVALID_BUFFER). */
+int32_t MS_WASM_EXPORT(ms_init_plan_limits)(uint32_t limits, uint32_t limits_len);
+
+/* ms_plan on a public observation with the solver workspace and the ms_host
+ * clock. `obs`, `limits` and `result` must be owned, 8-byte aligned and
+ * pairwise disjoint, limits_len MS_WASM_PLAN_LIMITS_BYTES and result_len
+ * MS_WASM_PLAN_RESULT_BYTES: all checked before the planner reads or
+ * writes anything (MS_ERR_INVALID_BUFFER leaves all three unchanged).
+ * Returns ms_plan's status: MS_OK with a canonical NONE, EXACT, ESTIMATED
+ * or UNAVAILABLE plan (budget or memory exhaustion is not an error), or
+ * MS_ERR_INVALID_BUFFER (also a limits block of another magic or version) /
+ * MS_ERR_INVALID_OBSERVATION / MS_ERR_INVALID_LIMITS / MS_ERR_INCONSISTENT /
+ * MS_ERR_INTERNAL, with the plan buffer untouched. The workspace is reset
+ * before returning on every path. Never called by the game instance. */
+int32_t MS_WASM_EXPORT(ms_plan_observation)(uint32_t obs, uint32_t obs_len, uint32_t limits,
+                                            uint32_t limits_len, uint32_t result,
+                                            uint32_t result_len);
+
+/* Game instance: whether `plan` (bytes from the worker's
+ * ms_plan_observation) answers the current public observation of game
+ * `generation` at `revision`: ms_plan_result_validate against a freshly
+ * built observation. MS_OK means the plan may be shown for that revision;
+ * nothing is stored, and the plan never reaches the result cache, autosolve
+ * or the game. Order: plan buffer (owned, 8-aligned, plan_len
+ * MS_WASM_PLAN_RESULT_BYTES) -> MS_ERR_INVALID_BUFFER; then
+ * MS_ERR_INVALID_REVISION, MS_ERR_STALE_REVISION, MS_ERR_GAME_NOT_STARTED,
+ * MS_ERR_GAME_OVER as for ms_get_observation; then the plan's own verdict
+ * (MS_ERR_INVALID_RESULT, or MS_ERR_INVALID_BUFFER for a wrong magic or
+ * version). Flags never enter the observation, so a plan checked at one
+ * revision also passes after flag-only revisions of the same position. */
+int32_t MS_WASM_EXPORT(ms_check_plan)(uint32_t generation, uint32_t revision, uint32_t plan,
+                                      uint32_t plan_len);
 
 #ifdef __cplusplus
 }

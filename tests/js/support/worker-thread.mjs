@@ -29,17 +29,18 @@ if (workerData.faults.clockThrows) {
   };
 }
 
-// The solver export fails as a trap would (RuntimeError escaping the call),
-// independently of what the solver does internally.
-if (workerData.faults.solveTraps) {
+// The solver or planner export fails as a trap would (RuntimeError escaping
+// the call), independently of what the engine does internally.
+if (workerData.faults.solveTraps || workerData.faults.planTraps) {
   const instantiate = WebAssembly.instantiate;
+  const trap = () => {
+    throw new WebAssembly.RuntimeError('unreachable');
+  };
   WebAssembly.instantiate = async (...args) => {
     const instance = await instantiate(...args);
-    const exports = Object.assign({}, instance.exports, {
-      ms_solve_observation: () => {
-        throw new WebAssembly.RuntimeError('unreachable');
-      }
-    });
+    const exports = Object.assign({}, instance.exports,
+      workerData.faults.solveTraps ? { ms_solve_observation: trap } : {},
+      workerData.faults.planTraps ? { ms_plan_observation: trap } : {});
     return { exports: exports };
   };
 }

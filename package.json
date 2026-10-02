@@ -11,7 +11,7 @@
   "scripts": {
     "test": "npm run test:js",
     "test:js": "node --test \"tests/js/*.test.mjs\"",
-    "test:js:unit": "node --test tests/js/abi.test.mjs tests/js/solver-host.test.mjs",
+    "test:js:unit": "node --test tests/js/abi.test.mjs tests/js/advisor-abi.test.mjs tests/js/solver-host.test.mjs",
     "test:browser": "playwright test --config tests/js/playwright.config.mjs"
   },
   "devDependencies": {

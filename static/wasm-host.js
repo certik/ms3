@@ -29,8 +29,14 @@ export const MAGIC = Object.freeze({
   VIEW: 0x4D530001,
   OBSERVATION: 0x4D530002,
   LIMITS: 0x4D530003,
-  RESULT: 0x4D530004
+  RESULT: 0x4D530004,
+  PLAN_LIMITS: 0x4D530005,
+  PLAN_RESULT: 0x4D530006
 });
+
+// The move advisor's own buffers (c/planner.h) carry MS_PLANNER_VERSION
+// instead of the ABI version; the ABI itself is unchanged (additive).
+export const PLANNER_VERSION = 1;
 
 export const STATUS = Object.freeze({
   OK: 0,
@@ -123,6 +129,14 @@ export const VIEW_HEADER_SIZE = 48;
 export const OBS_HEADER_SIZE = 32;
 export const RESULT_HEADER_SIZE = 120;
 export const LIMITS_SIZE = 56; // MS_WASM_LIMITS_BYTES
+export const PLAN_LIMITS_SIZE = 64; // MS_WASM_PLAN_LIMITS_BYTES
+export const PLAN_RESULT_SIZE = 112; // MS_WASM_PLAN_RESULT_BYTES
+export const PLAN_NO_CELL = 0xFFFFFFFF; // MS_PLAN_NO_CELL
+
+// ms_plan_status and ms_plan_reason (planner.h), by number.
+export const PLAN_STATUS_NAMES = Object.freeze(['none', 'exact', 'estimated', 'unavailable']);
+export const PLAN_REASON_NAMES = Object.freeze([null, 'certain_moves', 'finished', 'no_samples', 'budget',
+  'insufficient_rollouts', 'posterior_unavailable', 'not_started']);
 
 // ms_live_bytes pools (wasm_api.h).
 export const POOL = Object.freeze({ BUFFERS: 0, ENGINE: 1, SOLVER: 2 });
@@ -610,18 +624,214 @@ export function decodeLimits(buffer) {
   };
 }
 
+// Reads an ms_plan_limits block (planner.h; diagnostics and tests, C writes
+// it). Refuses another magic or planner version.
+export function decodePlanLimits(buffer) {
+  const bytes = asBytes(buffer, 'plan limits');
+  if (bytes.length !== PLAN_LIMITS_SIZE) throw malformed('plan limits', 'length');
+  const dv = dataView(bytes);
+  if (dv.getUint32(0, true) !== MAGIC.PLAN_LIMITS) throw malformed('plan limits', 'magic');
+  if (dv.getUint32(4, true) !== PLANNER_VERSION) throw malformed('plan limits', 'planner version');
+  return {
+    exactLayoutLimit: dv.getUint32(8, true),
+    exactNodeLimit: dv.getUint32(12, true),
+    sampleCount: dv.getUint32(16, true),
+    candidateLimit: dv.getUint32(20, true),
+    rolloutStepLimit: dv.getUint32(24, true),
+    flags: dv.getUint32(28, true),
+    timeBudgetMs: dv.getFloat64(32, true),
+    memoryBudgetBytes: dv.getBigUint64(40, true),
+    seed: dv.getBigUint64(48, true),
+    minRollouts: dv.getUint32(56, true)
+  };
+}
+
+/*
+ * Rebuilds the move advisor's answer from an ms_plan_result buffer
+ * (c/planner.h) for the observation bytes it was computed from:
+ *   { game_id, generation, revision, status, reason, cell, row, col,
+ *     survival_probability, win_probability, standard_error, candidates,
+ *     layouts, trials, incomplete, rollout_wins, search_nodes,
+ *     posterior_exact, elapsed_ms, exact_wins, exact_total, observation_hash }
+ * status: 'exact' (a completed search over every layout that fits the
+ * clues), 'estimated' (guided full-game rollouts), 'unavailable' or 'none'
+ * (nothing to suggest); reason: a PLAN_REASON_NAMES name, null for exact and
+ * estimated answers. Only those two name a cell (row/col beside its index)
+ * and carry probabilities; otherwise those fields are null. exact_wins and
+ * exact_total are integers only for exact answers, whose win probability is
+ * exactly their ratio; an estimate's is the share of its trials -
+ * incomplete finished rollout rounds that were won, and rollout_wins (null
+ * otherwise) is that integer number of rounds won. observation_hash is the
+ * plan's 64-bit fingerprint as 16 hex digits.
+ *
+ * The checks mirror C's ms_plan_result_validate on everything this side can
+ * see - header, planner version, dimensions/total/revealed against the
+ * observation, status and reason codes and their pairing with the position
+ * (no clue yet, nothing left to open, a guess), a hidden recommended cell
+ * (NO_CELL otherwise), finite probabilities in range, zero fields a status
+ * leaves unused, 0/1 flags, counts (rounds within layouts, candidates
+ * within hidden cells, per-reason counts of unavailable answers), reserved
+ * bytes - and are never stricter. C stays authoritative (ms_check_plan in
+ * the game instance), in particular for the observation hash against the
+ * current position.
+ */
+export function decodePlan(buffer, observation, routing = {}) {
+  const bytes = asBytes(buffer, 'move advice');
+  if (bytes.length !== PLAN_RESULT_SIZE) throw malformed('move advice', 'length');
+  const obs = asBytes(observation, 'observation');
+  const header = readObservationHeader(obs);
+  const dv = dataView(bytes);
+  const u32 = (offset) => dv.getUint32(offset, true);
+  const f64 = (offset) => dv.getFloat64(offset, true);
+  const bad = (detail) => malformed('move advice', detail);
+  if (u32(0) !== MAGIC.PLAN_RESULT) throw bad('magic');
+  if (u32(4) !== PLANNER_VERSION) throw bad('planner version');
+  const status = PLAN_STATUS_NAMES[u32(8)];
+  if (!status) throw bad('status');
+  const reasonCode = u32(12);
+  const reason = reasonCode < PLAN_REASON_NAMES.length ? PLAN_REASON_NAMES[reasonCode] : undefined;
+  if (reason === undefined) throw bad('reason');
+  if (u32(16) !== header.width || u32(20) !== header.height || u32(24) !== header.totalMines ||
+      u32(28) !== header.revealed) {
+    throw bad('another observation');
+  }
+  if (u32(68) !== 0) throw bad('reserved word');
+  const cell = u32(40);
+  const candidates = u32(44);
+  const layouts = u32(48);
+  const trials = u32(52);
+  const incomplete = u32(56);
+  const searchNodes = u32(60);
+  const posteriorExact = u32(64);
+  const exactWins = u32(104);
+  const exactTotal = u32(108);
+  const survival = f64(72);
+  const win = f64(80);
+  const standardError = f64(88);
+  const elapsedMs = f64(96);
+  const cells = header.width * header.height;
+  const hidden = cells - header.revealed;
+  if (![survival, win, standardError, elapsedMs].every(Number.isFinite) || elapsedMs < 0) throw bad('number');
+  if (posteriorExact > 1 || (layouts === 0 && posteriorExact !== 0)) throw bad('posterior flag');
+  // Rounds stop at the first unfinished one: incomplete is 0 or 1.
+  if (incomplete > 1 || incomplete > trials || trials > layouts) throw bad('rollout rounds');
+  if (candidates > hidden || (trials > 0 && candidates === 0) || (candidates > 0 && layouts === 0)) {
+    throw bad('candidates');
+  }
+  // The exact search runs only on a complete listing of at least 2 layouts.
+  if (searchNodes > 0 && (layouts < 2 || posteriorExact !== 1)) throw bad('search nodes');
+  // A guess is needed (and possible) once something is revealed and not every
+  // hidden cell is a mine.
+  const guess = header.revealed > 0 && hidden > header.totalMines;
+  const hiddenCell = cell < cells && obs[OBS_HEADER_SIZE + cell] === CLUE_HIDDEN;
+  const noEstimates = cell === PLAN_NO_CELL && survival === 0 && win === 0 && standardError === 0 &&
+    exactWins === 0 && exactTotal === 0;
+  switch (status) {
+    case 'none':
+      if (!((reason === 'not_started' && header.revealed === 0) ||
+            (reason === 'finished' && header.revealed > 0 && hidden === header.totalMines) ||
+            (reason === 'certain_moves' && guess))) {
+        throw bad('reason ' + reason + ' for this position');
+      }
+      if (!noEstimates || candidates || layouts || trials || searchNodes || posteriorExact) throw bad('empty answer');
+      break;
+    case 'exact':
+      if (reason !== null || !guess) throw bad('reason or position');
+      if (!hiddenCell) throw bad('cell');
+      // Every hidden cell safe in some layout is a candidate (fewer than
+      // total_mines cells are mines in all of them), and the survival is the
+      // advised cell's safe-layout count over the total.
+      if (candidates <= hidden - header.totalMines ||
+          Math.trunc(survival * exactTotal + 0.5) / exactTotal !== survival) {
+        throw bad('exact search figures');
+      }
+      if (exactTotal < 2 || layouts !== exactTotal || exactWins === 0 ||
+          exactWins >= exactTotal || trials !== 0 || searchNodes === 0 || posteriorExact !== 1 ||
+          standardError !== 0 || win !== exactWins / exactTotal || !(survival > 0 && survival < 1) ||
+          win > survival) {
+        throw bad('exact search figures');
+      }
+      break;
+    case 'estimated': {
+      if (reason !== null || !guess) throw bad('reason or position');
+      if (!hiddenCell) throw bad('cell');
+      // Never certain: survival below 1, at least one round won, and every
+      // round won only with a positive standard error.
+      const completed = trials - incomplete;
+      if (candidates === 0 || completed === 0 || exactWins !== 0 || exactTotal !== 0 ||
+          !(survival > 0 && survival < 1) || !(win > 0) || win > 1 || standardError < 0 || standardError > 0.5 ||
+          (win === 1 && !(standardError > 0)) || Math.trunc(win * completed + 0.5) / completed !== win) {
+        throw bad('rollout figures');
+      }
+      break;
+    }
+    default: { // unavailable: how far the planner got depends on why it stopped
+      let countsOk;
+      switch (reason) {
+        case 'no_samples':
+        case 'posterior_unavailable':
+          countsOk = layouts === 0 && candidates === 0 && searchNodes === 0;
+          break;
+        case 'insufficient_rollouts':
+          countsOk = layouts > 0;
+          break;
+        case 'budget':
+          countsOk = true;
+          break;
+        default:
+          throw bad('reason ' + reason + ' for this position');
+      }
+      if (!guess) throw bad('reason ' + reason + ' for this position');
+      if (!countsOk || !noEstimates) throw bad('empty answer');
+      break;
+    }
+  }
+  const recommends = status === 'exact' || status === 'estimated';
+  // Validated above: the win probability is exactly k / finished rounds.
+  const rolloutWins = status === 'estimated' ? Math.trunc(win * (trials - incomplete) + 0.5) : null;
+  return {
+    game_id: routing.gameId === undefined ? null : routing.gameId,
+    generation: routing.generation === undefined ? null : routing.generation,
+    revision: routing.revision === undefined ? null : routing.revision,
+    status: status,
+    reason: reason,
+    cell: recommends ? cell : null,
+    row: recommends ? Math.floor(cell / header.width) : null,
+    col: recommends ? cell % header.width : null,
+    survival_probability: recommends ? plusZero(survival) : null,
+    win_probability: recommends ? plusZero(win) : null,
+    standard_error: recommends ? plusZero(standardError) : null,
+    candidates: candidates,
+    layouts: layouts,
+    trials: trials,
+    incomplete: incomplete,
+    rollout_wins: rolloutWins,
+    search_nodes: searchNodes,
+    posterior_exact: posteriorExact === 1,
+    elapsed_ms: plusZero(elapsedMs),
+    exact_wins: status === 'exact' ? exactWins : null,
+    exact_total: status === 'exact' ? exactTotal : null,
+    observation_hash: dv.getBigUint64(32, true).toString(16).padStart(16, '0')
+  };
+}
+
 // ------------------------------------------------------- worker protocol
 //
 // main -> worker   { type: 'init', module }                      once
 //                  { type: 'solve', id, generation, revision, observation }
+//                  { type: 'plan', id, generation, revision, observation }
 // worker -> main   { type: 'ready' }
 //                  { type: 'init-failed', error }
 //                  { type: 'result', id, generation, revision, result }
+//                  { type: 'plan-result', id, generation, revision, result }
 //                  { type: 'error', id, generation, revision, error }
 // observation/result are ArrayBuffer copies (transferred), never views of a
-// WASM memory. error = { code, status, message, fatal }. Messages carrying
-// any other field are protocol violations: only public observations and
-// routing numbers ever reach the solver.
+// WASM memory; a plan result is exactly PLAN_RESULT_SIZE bytes. A solve is
+// answered by 'result' or 'error', a plan (the move advisor, on the same
+// worker and instance, one request at a time) by 'plan-result' or 'error'.
+// error = { code, status, message, fatal }. Messages carrying any other
+// field are protocol violations: only public observations and routing
+// numbers ever reach the solver.
 
 function hasExactKeys(message, keys) {
   if (!message || typeof message !== 'object' || Array.isArray(message)) return false;
@@ -646,12 +856,21 @@ function protocolError(message) {
 }
 
 export function checkSolveRequest(message) {
-  if (!hasExactKeys(message, ['type', 'id', 'generation', 'revision', 'observation']) || message.type !== 'solve') {
-    throw protocolError('A solve request must have exactly type, id, generation, revision and observation.');
+  return checkObservationRequest(message, 'solve');
+}
+
+// A move-advice request: the same public fields as a solve request.
+export function checkPlanRequest(message) {
+  return checkObservationRequest(message, 'plan');
+}
+
+function checkObservationRequest(message, type) {
+  if (!hasExactKeys(message, ['type', 'id', 'generation', 'revision', 'observation']) || message.type !== type) {
+    throw protocolError('A ' + type + ' request must have exactly type, id, generation, revision and observation.');
   }
-  if (!isRequestId(message.id)) throw protocolError('The solve request id must be a positive whole number.');
+  if (!isRequestId(message.id)) throw protocolError('The ' + type + ' request id must be a positive whole number.');
   if (!isGeneration(message.generation) || !isRevision(message.revision)) {
-    throw protocolError('The solve request generation/revision is out of range.');
+    throw protocolError('The ' + type + ' request generation/revision is out of range.');
   }
   const observation = message.observation;
   if (!(observation instanceof ArrayBuffer) || observation.byteLength < OBS_HEADER_SIZE ||
@@ -697,6 +916,13 @@ export function checkWorkerMessage(message) {
           isRequestId(message.id) && isGeneration(message.generation) && isRevision(message.revision) &&
           message.result instanceof ArrayBuffer && message.result.byteLength >= RESULT_HEADER_SIZE &&
           message.result.byteLength <= MAX_RESULT_SIZE && message.result.byteLength % 8 === 0) {
+        return message;
+      }
+      break;
+    case 'plan-result':
+      if (hasExactKeys(message, ['type', 'id', 'generation', 'revision', 'result']) &&
+          isRequestId(message.id) && isGeneration(message.generation) && isRevision(message.revision) &&
+          message.result instanceof ArrayBuffer && message.result.byteLength === PLAN_RESULT_SIZE) {
         return message;
       }
       break;
@@ -829,7 +1055,7 @@ export const REQUIRED_EXPORTS = Object.freeze([
   'ms_abi_version', 'ms_init', 'ms_alloc', 'ms_free', 'ms_view_bytes', 'ms_obs_bytes', 'ms_result_bytes',
   'ms_status_text', 'ms_reason_text', 'ms_live_bytes', 'ms_new_game', 'ms_act', 'ms_get_view',
   'ms_get_observation', 'ms_get_cached_result', 'ms_accept_result', 'ms_apply_autosolve',
-  'ms_init_default_limits', 'ms_solve_observation'
+  'ms_init_default_limits', 'ms_solve_observation', 'ms_init_plan_limits', 'ms_plan_observation', 'ms_check_plan'
 ]);
 
 function loadError(code, message, cause) {
@@ -1039,6 +1265,7 @@ export class WasmGameEngine extends WasmInstance {
 
   setup() {
     this.scratch = this.alloc(SCRATCH_BYTES);
+    this.plan = this.alloc(PLAN_RESULT_SIZE);
   }
 
   // Buffers for width x height, allocated before the game changes so a
@@ -1143,25 +1370,68 @@ export class WasmGameEngine extends WasmInstance {
     this.check(this.status('ms_apply_autosolve', generation, revision, this.scratch + OUT_A, this.scratch + OUT_B));
     return { available: this.readFlag(this.scratch + OUT_A), changed: this.readFlag(this.scratch + OUT_B) };
   }
+
+  // Whether worker plan bytes answer the current observation of
+  // (generation, revision) (ms_check_plan). Throws the C status otherwise;
+  // nothing is stored either way.
+  checkPlan(generation, revision, bytes) {
+    this.requireGame();
+    if (!(bytes instanceof Uint8Array) || bytes.length !== PLAN_RESULT_SIZE) {
+      throw errorFromStatus(STATUS.INVALID_RESULT);
+    }
+    this.copyIn(this.plan, bytes);
+    this.check(this.status('ms_check_plan', generation, revision, this.plan, PLAN_RESULT_SIZE));
+  }
 }
 
 /*
- * The worker's solver instance: default limits from C once, then one
- * ms_solve_observation per request with buffers that are freed afterwards.
+ * The worker's solver instance: default solver and planner limits from C
+ * once, then one ms_solve_observation or ms_plan_observation per request
+ * with buffers that are freed afterwards.
  */
 export class WasmSolverEngine extends WasmInstance {
   constructor(instance, ioState) {
     super(instance, ioState, 'odds calculator');
     this.limits = 0;
+    this.planLimits = 0;
   }
 
   setup() {
     this.limits = this.alloc(LIMITS_SIZE);
     this.check(this.status('ms_init_default_limits', this.limits, LIMITS_SIZE));
+    this.planLimits = this.alloc(PLAN_LIMITS_SIZE);
+    this.check(this.status('ms_init_plan_limits', this.planLimits, PLAN_LIMITS_SIZE));
+    this.defaultPlanLimits(); // a module from another planner version is refused here
   }
 
   defaultLimits() {
     return decodeLimits(this.copyOut(this.limits, LIMITS_SIZE));
+  }
+
+  defaultPlanLimits() {
+    return decodePlanLimits(this.copyOut(this.planLimits, PLAN_LIMITS_SIZE));
+  }
+
+  // Plans the next move for a copied public observation; returns a
+  // JS-owned copy of the PLAN_RESULT_SIZE plan bytes.
+  plan(observation) {
+    const header = readObservationHeader(observation);
+    const obsLen = this.u32('ms_obs_bytes', header.width, header.height);
+    if (obsLen !== observation.length) throw errorFromStatus(STATUS.INVALID_OBSERVATION);
+    const obs = this.alloc(obsLen);
+    let result = 0;
+    try {
+      result = this.alloc(PLAN_RESULT_SIZE);
+      this.copyIn(obs, observation);
+      this.check(this.status('ms_plan_observation', obs, obsLen, this.planLimits, PLAN_LIMITS_SIZE, result,
+        PLAN_RESULT_SIZE));
+      return this.copyOut(result, PLAN_RESULT_SIZE);
+    } finally {
+      if (!this.failure) {
+        this.free(result);
+        this.free(obs);
+      }
+    }
   }
 
   // Solves a copied public observation; returns a JS-owned copy of the result.

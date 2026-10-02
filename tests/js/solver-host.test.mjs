@@ -1,7 +1,8 @@
 // Worker lifecycle tests for SolverHost (static/engine-client.js) with an
 // in-memory worker double: request ids, cancellation by termination, late and
-// malformed messages, startup failures, traps and timeouts. The real worker
-// and engine are covered by engine-client.test.mjs and the browser tests.
+// malformed messages, startup failures, traps and timeouts, for both request
+// kinds (odds solves and move-advice plans). The real worker and engine are
+// covered by engine-client.test.mjs, advisor.test.mjs and the browser tests.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeWorkerFactory, flush, importSite } from './support/site.mjs';
@@ -24,6 +25,11 @@ function setup(options = {}) {
 
 function resultFor(message, length = 160) {
   return { type: 'result', id: message.id, generation: message.generation, revision: message.revision,
+    result: new ArrayBuffer(length) };
+}
+
+function planFor(message, length = 112) {
+  return { type: 'plan-result', id: message.id, generation: message.generation, revision: message.revision,
     result: new ArrayBuffer(length) };
 }
 
@@ -66,7 +72,8 @@ test('starts a worker with the cached module, then sends one copied public obser
   assert.ok(bytes instanceof Uint8Array);
   assert.equal(bytes.length, 160);
   assert.equal(host.busy, false);
-  assert.deepEqual(host.stats, { workersCreated: 1, workersTerminated: 0, solvesSent: 1, lateMessages: 0 });
+  assert.deepEqual(host.stats, { workersCreated: 1, workersTerminated: 0, solvesSent: 1, plansSent: 0,
+    lateMessages: 0 });
 });
 
 test('a sub-view observation is copied before it is transferred', async () => {
@@ -319,4 +326,150 @@ test('a worker that never starts also times out', async () => {
   const error = await rejection(host.solve({ generation: 1, revision: 0, observation: observation() }));
   assert.equal(error.code, 'solver_timeout');
   assert.equal(factory.created[0].terminated, true);
+});
+
+// ------------------------------------------------------------ request kinds
+
+async function startedPlan(host, factory, request = { generation: 1, revision: 0 }) {
+  const promise = host.solve(Object.assign({ kind: 'plan', observation: observation() }, request));
+  const worker = factory.created[factory.created.length - 1];
+  worker.reply({ type: 'ready' }); // a fresh worker for this job
+  await flush();
+  return { promise, worker, message: worker.last('plan') };
+}
+
+test('a plan request posts the same public fields as a solve and resolves with plan bytes', async () => {
+  const { host, factory } = setup();
+  const obs = observation();
+  const promise = host.solve({ kind: 'plan', generation: 2, revision: 9, observation: obs });
+  assert.equal(host.jobKind, 'plan');
+  const worker = factory.created[0];
+  worker.reply({ type: 'ready' });
+  await flush();
+  const message = worker.last('plan');
+  assert.deepEqual(Object.keys(message), ['type', 'id', 'generation', 'revision', 'observation']);
+  assert.deepEqual([message.generation, message.revision], [2, 9]);
+  assert.equal(message.observation, obs.buffer, 'the copied observation is transferred');
+  assert.equal(worker.last('solve'), undefined, 'a plan is never sent as a solve');
+  worker.reply(planFor(message));
+  const bytes = await promise;
+  assert.ok(bytes instanceof Uint8Array);
+  assert.equal(bytes.length, 112);
+  assert.equal(host.jobKind, null);
+  assert.deepEqual(host.stats, { workersCreated: 1, workersTerminated: 0, solvesSent: 0, plansSent: 1,
+    lateMessages: 0 });
+
+  // The same worker then serves an odds solve: one instance, one job at a time.
+  const solve = host.solve({ generation: 2, revision: 9, observation: observation() });
+  assert.equal(host.jobKind, 'solve');
+  await flush();
+  const next = worker.last('solve');
+  assert.equal(next.id, message.id + 1);
+  worker.reply(resultFor(next));
+  assert.equal((await solve).length, 160);
+  assert.equal(factory.created.length, 1, 'plans and solves share the worker');
+  assert.deepEqual(host.stats, { workersCreated: 1, workersTerminated: 0, solvesSent: 1, plansSent: 1,
+    lateMessages: 0 });
+  assert.throws(() => host.solve({ kind: 'teleport', generation: 1, revision: 0, observation: observation() }),
+    /unknown request kind teleport/);
+  assert.equal(host.busy, false, 'an unknown kind starts nothing');
+});
+
+test('an answer of the other kind is a protocol violation for either job', async () => {
+  const cases = [
+    ['plan', (message) => resultFor(message, 112)],
+    ['plan', (message) => resultFor(message)],
+    ['solve', (message) => planFor(message)]
+  ];
+  for (const [kind, answer] of cases) {
+    const { host, factory } = setup();
+    const promise = host.solve({ kind: kind, generation: 1, revision: 0, observation: observation() });
+    const worker = factory.created[0];
+    worker.reply({ type: 'ready' });
+    await flush();
+    worker.reply(answer(worker.last(kind)));
+    const error = await rejection(promise);
+    assert.equal(error.code, 'invalid_message', kind);
+    assert.equal(error.kind, 'worker');
+    assert.equal(worker.terminated, true, 'the confused worker is discarded');
+  }
+});
+
+test('plan results must be exactly the plan size', async () => {
+  for (const length of [104, 120, 160, 0]) {
+    const { host, factory } = setup();
+    const { promise, worker, message } = await startedPlan(host, factory);
+    worker.reply(planFor(message, length));
+    const error = await rejection(promise);
+    assert.equal(error.code, 'invalid_message', String(length));
+    assert.equal(worker.terminated, true);
+  }
+});
+
+test('cancel by kind leaves a job of the other kind running', async () => {
+  const { host, factory } = setup();
+  const { promise, worker, message } = await startedPlan(host, factory);
+  assert.equal(host.cancel('solve'), false, 'no odds solve is running');
+  assert.equal(worker.terminated, false);
+  assert.equal(host.cancel('plan'), true);
+  const error = await rejection(promise);
+  assert.equal(error.kind, 'aborted');
+  assert.match(error.message, /move advice was cancelled/);
+  assert.equal(worker.terminated, true, 'a running plan can only be stopped by terminating its worker');
+  worker.replyStale(planFor(message));
+  assert.equal(host.stats.lateMessages, 1);
+
+  const solve = host.solve({ generation: 1, revision: 1, observation: observation() });
+  assert.equal(factory.created.length, 2);
+  factory.created[1].reply({ type: 'ready' });
+  await flush();
+  assert.equal(host.cancel('plan'), false, 'an odds solve is never cancelled as a plan');
+  factory.created[1].reply(resultFor(factory.created[1].last('solve')));
+  assert.equal((await solve).length, 160);
+  const plan = host.solve({ kind: 'plan', generation: 1, revision: 1, observation: observation() });
+  assert.equal(host.cancel(), true, 'cancel() without a kind stops any job');
+  assert.equal((await rejection(plan)).kind, 'aborted');
+});
+
+test('plan failures are explicit and name the move advisor; error replies follow the fatal flag', async () => {
+  const timed = setup({ timeoutMs: 30 });
+  const { promise } = await startedPlan(timed.host, timed.factory);
+  const timeout = await rejection(promise);
+  assert.equal(timeout.code, 'solver_timeout');
+  assert.match(timeout.message, /^The move advisor did not finish within/);
+
+  const { host, factory } = setup();
+  const first = await startedPlan(host, factory);
+  first.worker.reply({ type: 'error', id: first.message.id, generation: 1, revision: 0,
+    error: { code: 'invalid_observation', status: 8, message: 'bad clue', fatal: false } });
+  const soft = await rejection(first.promise);
+  assert.equal(soft.code, 'invalid_observation');
+  assert.equal(soft.kind, 'worker');
+  assert.equal(first.worker.terminated, false, 'a non-fatal plan error keeps the worker');
+  const second = host.solve({ kind: 'plan', generation: 1, revision: 0, observation: observation() });
+  await flush();
+  first.worker.reply({ type: 'error', id: first.worker.last('plan').id, generation: 1, revision: 0,
+    error: { code: 'trap', status: null, message: 'The odds calculator stopped unexpectedly', fatal: true } });
+  const hard = await rejection(second);
+  assert.equal(hard.code, 'trap');
+  assert.equal(hard.kind, 'worker', 'a planner trap never fails the game instance');
+  assert.equal(first.worker.terminated, true);
+
+  const crashed = setup();
+  const running = await startedPlan(crashed.host, crashed.factory);
+  running.worker.crash('RuntimeError: unreachable');
+  const crash = await rejection(running.promise);
+  assert.equal(crash.code, 'solver_crashed');
+  assert.equal(running.worker.terminated, true);
+});
+
+test('a plan for another position or request is refused', async () => {
+  for (const change of [{ id: 99 }, { generation: 2 }, { revision: 5 }]) {
+    const { host, factory } = setup();
+    const { promise, worker, message } = await startedPlan(host, factory, { generation: 1, revision: 4 });
+    worker.reply(Object.assign(planFor(message), change));
+    const error = await rejection(promise);
+    assert.equal(error.code, 'invalid_message', JSON.stringify(change));
+    assert.equal(worker.terminated, true);
+  }
 });

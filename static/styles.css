@@ -32,6 +32,8 @@
   --hidden-top: #3b4d6b;
   --hidden-bottom: #31415c;
   --revealed: #131d30;
+  --advice-ink: #f8fafc;
+  --advice-edge: #0b1120;
 }
 
 *,
@@ -641,6 +643,50 @@ kbd {
   font-size: 0.9rem;
 }
 
+/* Move advice below the board: changing text here never moves the board. */
+.advice {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin: 10px 0 0;
+  padding: 9px 12px;
+  border-left: 3px dashed var(--advice-ink);
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+
+.advice[data-state="error"] {
+  border-left-color: var(--red);
+}
+
+.advice-badge {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  margin-top: 1px;
+}
+
+.advice-body {
+  flex: 1 1 16em;
+  min-width: 0;
+}
+
+.advice-title {
+  font-weight: 650;
+  color: var(--text);
+}
+
+.advice-detail:empty {
+  display: none;
+}
+
+.advice .btn {
+  align-self: center;
+}
+
 .segmented {
   display: inline-flex;
   padding: 3px;
@@ -1103,6 +1149,47 @@ kbd {
   transform: translate(12%, 16%);
 }
 
+/* The suggested next move: a dashed ring (a pattern, not only a color) and
+   a corner target, drawn over the odds without replacing them. ::after is
+   the keyboard focus ring. */
+.cell.is-advised::before,
+.legend-cell.is-advised::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border: 2px dashed var(--advice-ink);
+  border-radius: max(3px, calc(var(--cell) * 0.11));
+  box-shadow: 0 0 0 1px var(--advice-edge), inset 0 0 0 1px var(--advice-edge);
+  pointer-events: none;
+}
+
+.legend-cell.is-advised {
+  position: relative;
+}
+
+.cell .icon.advice-icon,
+.legend-cell .icon.advice-icon {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 38%;
+  height: 38%;
+  pointer-events: none;
+}
+
+.cell.has-odds.is-advised .odds {
+  font-size: max(8px, calc(var(--cell) * 0.31));
+  transform: translateY(24%);
+}
+
+.cell.has-odds.is-advised .odds.odds-long {
+  font-size: max(7.5px, calc(var(--cell) * 0.27));
+}
+
+.legend-cell.is-advised .odds {
+  transform: translateY(24%);
+}
+
 .is-proven-safe {
   --heat-bg: #0c4a43;
   --heat-fg: #5eead4;
@@ -1458,6 +1545,11 @@ kbd {
   color: #fcd34d;
 }
 
+.tag-advice {
+  background: rgba(248, 250, 252, 0.1);
+  color: var(--advice-ink);
+}
+
 .flag-note,
 .safe-note {
   display: flex;
@@ -1774,6 +1866,11 @@ kbd {
   .cell.is-proven-safe,
   .cell.is-proven-mine {
     border: 3px double ButtonText;
+  }
+
+  .cell.is-advised::before,
+  .legend-cell.is-advised::before {
+    border-color: Highlight;
   }
 
   .cell:focus-visible::after {

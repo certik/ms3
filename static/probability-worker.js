@@ -3,10 +3,11 @@
  * worker created by engine-client.js).
  *
  * It owns a second, independent instance of the engine module and runs only
- * C ms_solve_observation on public observations: the revealed clues and the
- * mine total, copied out of the game instance. It never sees flags, the
- * hidden layout, the game's seed or the game instance's memory, and it keeps
- * no state between requests besides its WebAssembly instance.
+ * C ms_solve_observation (mine odds) and ms_plan_observation (the move
+ * advisor) on public observations: the revealed clues and the mine total,
+ * copied out of the game instance. It never sees flags, the hidden layout,
+ * the game's seed or the game instance's memory, and it keeps no state
+ * between requests besides its WebAssembly instance.
  *
  * Protocol (wasm-host.js, "worker protocol"):
  *   <- { type: 'init', module }   the compiled WebAssembly.Module, once
@@ -14,12 +15,18 @@
  *   <- { type: 'solve', id, generation, revision, observation: ArrayBuffer }
  *   -> { type: 'result', id, generation, revision, result: ArrayBuffer }
  *    | { type: 'error', id, generation, revision, error }
+ *   <- { type: 'plan', id, generation, revision, observation: ArrayBuffer }
+ *   -> { type: 'plan-result', id, generation, revision, result: ArrayBuffer }
+ *    | { type: 'error', id, generation, revision, error }
  * Requests are handled one at a time and synchronously; the page cancels an
- * obsolete solve by terminating this worker. After a trap the instance is
- * unusable: the error is reported as fatal and the worker closes itself.
+ * obsolete solve or plan by terminating this worker. After a trap the
+ * instance is unusable: the error is reported as fatal and the worker
+ * closes itself.
  */
 
-import { EngineError, checkSolveRequest, errorPayload, instantiateSolverEngine } from './wasm-host.js';
+import {
+  EngineError, checkPlanRequest, checkSolveRequest, errorPayload, instantiateSolverEngine
+} from './wasm-host.js';
 
 let phase = 'new'; // new | starting | ready | failed
 let solver = null;
@@ -52,10 +59,17 @@ function routingOf(message) {
   return ok && id >= 1 && generation >= 1 ? { id: id, generation: generation, revision: revision } : null;
 }
 
-function solve(message) {
+const REQUESTS = {
+  solve: { check: checkSolveRequest, run: (request) => solver.solve(request.observation), reply: 'result' },
+  plan: { check: checkPlanRequest, run: (request) => solver.plan(request.observation), reply: 'plan-result' }
+};
+
+function handle(message) {
+  const type = message && typeof message === 'object' && message.type === 'plan' ? 'plan' : 'solve';
+  const kind = REQUESTS[type];
   let request;
   try {
-    request = checkSolveRequest(message);
+    request = kind.check(message);
   } catch (error) {
     if (!(error instanceof EngineError)) throw error;
     const routing = routingOf(message);
@@ -72,7 +86,7 @@ function solve(message) {
   const reply = { id: request.id, generation: request.generation, revision: request.revision };
   let result;
   try {
-    result = solver.solve(request.observation);
+    result = kind.run(request);
   } catch (error) {
     const fatal = !(error instanceof EngineError) || error.kind === 'trap' || error.kind === 'internal';
     self.postMessage(Object.assign({ type: 'error' }, reply, { error: errorPayload(error, fatal) }));
@@ -83,7 +97,7 @@ function solve(message) {
     return;
   }
   const buffer = result.buffer;
-  self.postMessage(Object.assign({ type: 'result' }, reply, { result: buffer }), [buffer]);
+  self.postMessage(Object.assign({ type: kind.reply }, reply, { result: buffer }), [buffer]);
 }
 
 self.addEventListener('message', (event) => {
@@ -101,7 +115,7 @@ self.addEventListener('message', (event) => {
   if (phase !== 'ready') {
     throw new Error('probability-worker: message received while ' + phase);
   }
-  solve(message);
+  handle(message);
 });
 
 self.addEventListener('messageerror', () => {
