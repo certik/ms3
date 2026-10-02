@@ -53,12 +53,26 @@ static uint64_t f64_bits(double value) {
     return pun.u;
 }
 
+/* corec's fast_sqrt is approximate on Windows. Bisection gives an independent
+ * reference for these bounded test values, unlike the planner's Newton method. */
+static double ref_sqrt(double value) {
+    CHECK(value >= 0.0 && value - value == 0.0);
+    if (value == 0.0) return 0.0;
+    double lo = 0.0, hi = value > 1.0 ? value : 1.0;
+    for (uint32_t i = 0; i < 100u; i++) {
+        double mid = lo + (hi - lo) * 0.5;
+        if (mid * mid < value) lo = mid;
+        else hi = mid;
+    }
+    return lo + (hi - lo) * 0.5;
+}
+
 /* The documented ESTIMATED standard error for `wins` of `done` sampled
  * rounds: the Jeffreys posterior standard deviation, times the finite-
  * population factor `fpc` (1 for draws). */
 static double jeffreys_se(uint32_t wins, uint32_t done, double fpc) {
     double a = (double)wins + 0.5, b = (double)(done - wins) + 0.5, sum = a + b;
-    return fast_sqrt(a * b / (sum * sum * (sum + 1.0)) * fpc);
+    return ref_sqrt(a * b / (sum * sum * (sum + 1.0)) * fpc);
 }
 
 /* The counts of a result stay within the limits of its call, which the
@@ -1355,7 +1369,7 @@ static void test_rollout_statistics(void) {
             double truth = (double)policy_wins(&env, obs_buf, len, st.cell[k]) / ref.count;
             double est = (double)st.wins[k] / (double)st.rounds;
             double sd = truth * (1.0 - truth) / (double)st.rounds;
-            double tol = 4.5 * (sd > 0.0 ? fast_sqrt(sd) : 0.0) + 1e-12;
+            double tol = 4.5 * (sd > 0.0 ? ref_sqrt(sd) : 0.0) + 1e-12;
             if (!(est - truth <= tol && truth - est <= tol)) {
                 test_print("    ");
                 test_print(f->name);
@@ -1381,7 +1395,7 @@ static void test_rollout_statistics(void) {
                 continue;
             }
             double margin = (double)st.gain[k] - (double)st.loss[k] -
-                            fast_sqrt((double)st.gain[k] + (double)st.loss[k]);
+                            ref_sqrt((double)st.gain[k] + (double)st.loss[k]);
             if (margin > top + 1e-9) {
                 top = margin;
                 advised = k;
@@ -2032,7 +2046,7 @@ static void test_rollout_limits(void) {
             double top = 0.0, unknown = (double)r.incomplete;
             for (uint32_t k = 1; k < st.candidates; k++) {
                 double gain = (double)st.gain[k], loss = (double)st.loss[k];
-                double margin = gain - loss - unknown - fast_sqrt(gain + loss + unknown);
+                double margin = gain - loss - unknown - ref_sqrt(gain + loss + unknown);
                 if (margin > top + 1e-9) {
                     top = margin;
                     advised = k;
@@ -2234,6 +2248,11 @@ static void test_huge_boards(void) {
 }
 
 void test_planner(void) {
+    test_case("independent square-root reference");
+    CHECK(ref_sqrt(0.0) == 0.0);
+    CHECK_NEAR(ref_sqrt(0.25), 0.5, 1e-15);
+    CHECK_NEAR(ref_sqrt(4.0), 2.0, 1e-15);
+    CHECK_NEAR(ref_sqrt(2.0), 1.4142135623730951, 1e-15);
     test_case("limits defaults and validation");
     test_limits();
     test_case("argument, aliasing and consistency errors");
